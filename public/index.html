@@ -230,6 +230,8 @@
     /* ── Toggle switch ── */
     .toggle-switch { width: 36px; height: 20px; border-radius: 10px; background: var(--border2); position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
     .toggle-knob   { width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left .2s; }
+    .toggle-switch.toggle-on { background: var(--accent); }
+    .toggle-switch.toggle-on .toggle-knob { left: 18px; }
 
     /* ── Status label ── */
     .status-label { font-size: 11px; color: var(--muted); }
@@ -388,7 +390,7 @@
     .gap-8  { gap: 8px; }
     .gap-12 { gap: 12px; }
     .align-center { align-items: center; }
-    .mono { font-family: 'Inter', sans-serif; }
+    .mono { font-family: monospace; }
     .text-muted   { color: var(--muted); }
     .text-accent  { color: var(--accent); }
     .text-danger  { color: var(--danger); }
@@ -972,29 +974,28 @@ function toggleTypeFields(prefix, v) {
 document.getElementById('sm-type').addEventListener('change', e => toggleTypeFields('sm', e.target.value));
 
 document.getElementById('sched-modal-cancel').addEventListener('click', () => hideModal('sched-modal'));
-document.getElementById('sched-modal-save').addEventListener('click', async () => {
-  const smType = document.getElementById('sm-type').value;
-  const url    = document.getElementById('sm-url').value.trim();
-  if (!url) { toast('Stream URL is required', 'error'); return; }
+// #5 — shared schedule payload builder
+function buildSchedulePayload(prefix, url) {
+  return {
+    name:         document.getElementById(`${prefix}-name`).value || 'Untitled',
+    url,
+    scheduleType: document.getElementById(`${prefix}-type`).value,
+    runAt:        document.getElementById(`${prefix}-runat`).value || null,
+    cronExpr:     document.getElementById(`${prefix}-cron`).value.trim() || null,
+  };
+}
 
-  if (smType === 'now') {
-    await POST('/api/play-now', {
-      name:       document.getElementById('sm-name').value || 'Untitled',
-      url,
-    });
+document.getElementById('sched-modal-save').addEventListener('click', async () => {
+  const url  = document.getElementById('sm-url').value.trim();
+  if (!url) { toast('Stream URL is required', 'error'); return; }
+  const body = buildSchedulePayload('sm', url);
+  if (body.scheduleType === 'now') {
+    await POST('/api/play-now', { name: body.name, url });
     toast('▶ Playing now!');
     hideModal('sched-modal');
     await loadHistory();
-      return;
+    return;
   }
-
-  const body = {
-    name:         document.getElementById('sm-name').value || 'Untitled',
-    url,
-    scheduleType: smType,
-    runAt:        document.getElementById('sm-runat').value || null,
-    cronExpr:     document.getElementById('sm-cron').value.trim() || null,
-  };
   if (editingId) {
     await PUT(`/api/schedules/${editingId}`, body);
     toast('Schedule updated');
@@ -1091,18 +1092,13 @@ function setSearchEnabled(on) {
   if (on) document.getElementById('m3u-search-help').textContent = '';
 }
 
-function showM3UError(msg) {
-  const el = document.getElementById('m3u-error');
-  el.textContent = '✗ ' + msg;
-  el.style.display = 'block';
-  document.getElementById('m3u-success').style.display = '';
-}
-
-function showM3USuccess(msg) {
-  const el = document.getElementById('m3u-success');
-  el.textContent = '✓ ' + msg;
-  el.style.display = 'block';
-  document.getElementById('m3u-error').style.display = '';
+// #2 — merged M3U message display
+function showM3UMessage(type, msg) {
+  const isErr = type === 'error';
+  document.getElementById('m3u-error').style.display   = isErr ? 'block' : '';
+  document.getElementById('m3u-success').style.display = isErr ? '' : 'block';
+  const el = document.getElementById(isErr ? 'm3u-error' : 'm3u-success');
+  el.textContent = (isErr ? '✗ ' : '✓ ') + msg;
 }
 
 function resetProgress() {
@@ -1124,13 +1120,14 @@ function updateGetBtn() {
   btn.textContent = (m3uCachedSourceUrl && inputUrl === m3uCachedSourceUrl) ? 'Refresh' : 'Get';
 }
 
+// #3/#6 — unified toggle state helper (uses CSS class instead of inline styles)
+function setToggleState(toggleId, enabled) {
+  document.getElementById(toggleId).classList.toggle('toggle-on', enabled);
+}
+
 function updateM3URefreshToggle() {
-  const toggle  = document.getElementById('m3u-refresh-toggle');
-  const knob    = document.getElementById('m3u-refresh-knob');
-  const timeInp = document.getElementById('m3u-refresh-time');
-  toggle.style.background  = m3uRefreshEnabled ? 'var(--accent)' : 'var(--border2)';
-  knob.style.left          = m3uRefreshEnabled ? '18px' : '2px';
-  timeInp.disabled         = !m3uRefreshEnabled;
+  setToggleState('m3u-refresh-toggle', m3uRefreshEnabled);
+  document.getElementById('m3u-refresh-time').disabled = !m3uRefreshEnabled;
 }
 
 // Auto-load cache on page open
@@ -1218,7 +1215,7 @@ function startM3UDownload(url, triggerBtn) {
       const hint = document.getElementById('m3u-cache-hint');
       hint.textContent = '⊟ Cached file loaded — ' + msg.count.toLocaleString() + ' channels · just downloaded.';
       hint.style.color = 'var(--accent)';
-      showM3USuccess(msg.count.toLocaleString() + ' channels downloaded and ready to search.');
+      showM3UMessage('success', msg.count.toLocaleString() + ' channels downloaded and ready to search.');
       setSearchEnabled(true);
       getBtn.disabled = false;
       getBtn.classList.remove('btn-loading');
@@ -1228,7 +1225,7 @@ function startM3UDownload(url, triggerBtn) {
     } else if (msg.type === 'error') {
       sse.close();
       progressWrap.style.display = 'none';
-      showM3UError(msg.message);
+      showM3UMessage('error', msg.message);
       getBtn.disabled = false;
       getBtn.classList.remove('btn-loading');
       if (wasReady) { m3uReady = true; setSearchEnabled(true); }
@@ -1238,7 +1235,7 @@ function startM3UDownload(url, triggerBtn) {
   sse.onerror = () => {
     sse.close();
     progressWrap.style.display = 'none';
-    showM3UError('Connection lost. Check that the server is running.');
+    showM3UMessage('error', 'Connection lost. Check that the server is running.');
     getBtn.disabled = false;
     getBtn.classList.remove('btn-loading');
     if (wasReady) { m3uReady = true; setSearchEnabled(true); }
@@ -1262,14 +1259,10 @@ document.getElementById('m3u-refresh-toggle').addEventListener('click', async ()
   toast(m3uRefreshEnabled ? 'M3U auto-refresh enabled' : 'M3U auto-refresh disabled');
 });
 
-let refreshTimeTimer = null;
-document.getElementById('m3u-refresh-time').addEventListener('input', () => {
-  clearTimeout(refreshTimeTimer);
-  refreshTimeTimer = setTimeout(async () => {
-    await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
-    toast('Refresh time saved');
-  }, 2000);
-});
+document.getElementById('m3u-refresh-time').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
+  toast('Refresh time saved');
+}, 2000));
 
 // Search
 // Live search
@@ -1387,29 +1380,19 @@ function openAddModal(ch) {
 document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
 document.getElementById('add-modal-cancel').addEventListener('click', () => hideModal('add-modal'));
 document.getElementById('add-modal-save').addEventListener('click', async () => {
-  const amType = document.getElementById('am-type').value;
-  const url    = document.getElementById('am-url').value.trim();
-
-  if (amType === 'now') {
-    const name = document.getElementById('am-name').value || 'Untitled';
+  const url  = document.getElementById('am-url').value.trim();
+  const body = buildSchedulePayload('am', url);
+  if (body.scheduleType === 'now') {
     const logo = (nowPlayingData?.url === url) ? nowPlayingData.logo : null;
-    nowPlayingData = { name, url, logo, startedAt: new Date().toISOString() };
+    nowPlayingData = { name: body.name, url, logo, startedAt: new Date().toISOString() };
     obsStreaming = true;
     updateNowPlaying(true, nowPlayingData);
-    await POST('/api/play-now', { name, url });
+    await POST('/api/play-now', { name: body.name, url });
     toast('▶ Playing now!');
     hideModal('add-modal');
     await loadHistory();
-      return;
+    return;
   }
-
-  const body = {
-    name:         document.getElementById('am-name').value || 'Untitled',
-    url,
-    scheduleType: amType,
-    runAt:        document.getElementById('am-runat').value || null,
-    cronExpr:     document.getElementById('am-cron').value.trim() || null,
-  };
   await POST('/api/schedules', body);
   toast('Added to schedules!');
   hideModal('add-modal');
@@ -1590,7 +1573,6 @@ function fmtDt(iso) {
 
 // ── Auto-Scheduler ────────────────────────────────────────────────────────────
 let asData = {};
-let asEnabled = false;
 
 function renderAsLog() {
   const log = document.getElementById('as-log');
@@ -1611,26 +1593,16 @@ function renderAsLog() {
 }
 
 function updateAsToggle() {
-  const toggle      = document.getElementById('as-toggle');
-  const knob        = document.getElementById('as-knob');
-  const refreshRow  = document.getElementById('as-refresh-row');
-  const fields      = ['as-search', 'as-time', 'as-endpoint'];
-  const buttons     = ['as-run-btn'];
-  if (asEnabled) {
-    toggle.style.background = 'var(--accent)';
-    knob.style.left = '18px';
-    fields.forEach(id => { const el = document.getElementById(id); el.disabled = false; el.style.opacity = ''; });
-    buttons.forEach(id => { const el = document.getElementById(id); el.disabled = false; el.style.opacity = ''; });
-    refreshRow.style.opacity = '';
-    refreshRow.style.pointerEvents = '';
-  } else {
-    toggle.style.background = 'var(--border2)';
-    knob.style.left = '2px';
-    fields.forEach(id => { const el = document.getElementById(id); el.disabled = true; el.style.opacity = '0.4'; });
-    buttons.forEach(id => { const el = document.getElementById(id); el.disabled = true; el.style.opacity = '0.4'; });
-    refreshRow.style.opacity = '0.4';
-    refreshRow.style.pointerEvents = 'none';
-  }
+  const on         = asData.enabled || false;
+  const refreshRow = document.getElementById('as-refresh-row');
+  setToggleState('as-toggle', on);
+  ['as-search', 'as-time', 'as-endpoint', 'as-run-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled      = !on;
+    el.style.opacity = on ? '' : '0.4';
+  });
+  refreshRow.style.opacity       = on ? '' : '0.4';
+  refreshRow.style.pointerEvents = on ? '' : 'none';
 }
 
 // ── SSE connections ───────────────────────────────────────────────────────────
@@ -1662,16 +1634,11 @@ const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
 });
 
 function updateAsRefreshToggle() {
-  const toggle = document.getElementById('as-refresh-toggle');
-  const knob   = document.getElementById('as-refresh-knob');
-  const on     = asData.refreshBeforeRun || false;
-  toggle.style.background = on ? 'var(--accent)' : '';
-  knob.style.left         = on ? '18px' : '2px';
+  setToggleState('as-refresh-toggle', asData.refreshBeforeRun || false);
 }
 
 async function loadAutoScheduler() {
-  asData    = await GET('/api/auto-scheduler');
-  asEnabled = asData.enabled || false;
+  asData = await GET('/api/auto-scheduler');
   document.getElementById('as-search').value   = asData.searchString || '';
   document.getElementById('as-time').value     = asData.checkTime || '';
   document.getElementById('as-endpoint').value = asData.apiEndpoint || '';
@@ -1682,9 +1649,9 @@ async function loadAutoScheduler() {
 }
 
 document.getElementById('as-toggle').addEventListener('click', async () => {
-  asEnabled = !asEnabled;
+  asData.enabled = !asData.enabled;
   updateAsToggle();
-  if (asEnabled) {
+  if (asData.enabled) {
     await POST('/api/auto-scheduler/enable');
     toast('Auto-Scheduler enabled');
   } else {
@@ -1699,19 +1666,15 @@ document.getElementById('as-refresh-toggle').addEventListener('click', () => {
   scheduleAsSave();
 });
 
-let asSaveTimer = null;
-function scheduleAsSave() {
-  clearTimeout(asSaveTimer);
-  asSaveTimer = setTimeout(async () => {
-    await PUT('/api/auto-scheduler', {
-      searchString:     document.getElementById('as-search').value.trim(),
-      checkTime:        document.getElementById('as-time').value,
-      apiEndpoint:      document.getElementById('as-endpoint').value.trim(),
-      refreshBeforeRun: asData.refreshBeforeRun || false,
-    });
-    toast('Auto-Scheduler saved');
-  }, 2000);
-}
+const scheduleAsSave = debounce(async () => {
+  await PUT('/api/auto-scheduler', {
+    searchString:     document.getElementById('as-search').value.trim(),
+    checkTime:        document.getElementById('as-time').value,
+    apiEndpoint:      document.getElementById('as-endpoint').value.trim(),
+    refreshBeforeRun: asData.refreshBeforeRun || false,
+  });
+  toast('Auto-Scheduler saved');
+}, 2000);
 ['as-search', 'as-time', 'as-endpoint'].forEach(id => {
   document.getElementById(id).addEventListener('input', scheduleAsSave);
 });

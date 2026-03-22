@@ -438,6 +438,14 @@ async function ensureOBSStreaming() {
   }
 }
 
+// #11 — shared OBS media source setter
+function setOBSMediaSource(obs, url) {
+  return obs.call('SetInputSettings', {
+    inputName: 'Media',
+    inputSettings: { input: url, is_local_file: false, looping: false }
+  });
+}
+
 async function launchPlayer(s) {
   if (nowPlaying?.url === s.url) return;
   const entry = {
@@ -454,8 +462,7 @@ async function launchPlayer(s) {
   const logEntry = () => {
     if (!s.noHistory) {
       history.push(entry);
-      if (history.length > MAX_HISTORY) history.shift();
-      saveHistory();
+      saveHistory(); // saveHistory() enforces MAX_HISTORY cap
     }
     const idx = schedules.findIndex(x => x.id === s.id);
     if (idx !== -1) { schedules[idx].lastRun = entry.startedAt; saveSchedules(); }
@@ -463,10 +470,7 @@ async function launchPlayer(s) {
 
   try {
     await ensureOBSStreaming();
-    await withOBS(obs => obs.call('SetInputSettings', {
-      inputName: 'Media',
-      inputSettings: { input: s.url, is_local_file: false, looping: false }
-    }));
+    await withOBS(obs => setOBSMediaSource(obs, s.url));
     entry.status = 'launched';
     nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
     saveNowPlaying();
@@ -488,9 +492,14 @@ let autoSchedCronJob = null;
 const autoSchedSSEClients = new Set();
 const dashboardSSEClients = new Set();
 
+// #9 — shared SSE broadcaster
+function broadcastSSE(clients, data) {
+  const msg = `data: ${JSON.stringify(data)}\n\n`;
+  clients.forEach(res => res.write(msg));
+}
+
 function pushDashboardEvent(type, data = {}) {
-  const msg = `data: ${JSON.stringify({ type, ...data })}\n\n`;
-  dashboardSSEClients.forEach(res => res.write(msg));
+  broadcastSSE(dashboardSSEClients, { type, ...data });
 }
 
 function logAutoActivity(type, message) {
@@ -499,10 +508,7 @@ function logAutoActivity(type, message) {
   if (autoScheduler.activityLog.length > 10) autoScheduler.activityLog.pop();
   saveAutoScheduler();
   console.log(`[AutoSched] ${message}`);
-  // Push to all SSE clients instantly
-  autoSchedSSEClients.forEach(res => {
-    res.write(`data: ${JSON.stringify(entry)}\n\n`);
-  });
+  broadcastSSE(autoSchedSSEClients, entry);
 }
 
 
@@ -689,25 +695,21 @@ function startM3URefreshCron() {
   console.log(`[M3U] Auto-refresh cron set for ${settings.m3uRefreshTime} daily`);
 }
 
-app.get('/api/events', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-  dashboardSSEClients.add(res);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 30000);
-  req.on('close', () => { clearInterval(heartbeat); dashboardSSEClients.delete(res); });
-});
+// #8 — SSE endpoint factory
+function createSSEEndpoint(clientSet) {
+  return (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    clientSet.add(res);
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 30000);
+    req.on('close', () => { clearInterval(heartbeat); clientSet.delete(res); });
+  };
+}
 
-app.get('/api/auto-scheduler/events', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-  autoSchedSSEClients.add(res);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 30000);
-  req.on('close', () => { clearInterval(heartbeat); autoSchedSSEClients.delete(res); });
-});
+app.get('/api/events',                createSSEEndpoint(dashboardSSEClients));
+app.get('/api/auto-scheduler/events', createSSEEndpoint(autoSchedSSEClients));
 
 app.get('/api/auto-scheduler',       (req, res) => res.json(autoScheduler));
 app.put('/api/auto-scheduler', (req, res) => {
@@ -769,16 +771,12 @@ app.post('/api/obs/stream/start', async (req, res) => {
       const url  = (nowPlaying && nowPlaying.url)  || (lastHistory ? lastHistory.url  : null);
       const name = (nowPlaying && nowPlaying.name) || (lastHistory ? lastHistory.scheduleName : 'Unknown');
       if (url) {
-        await obs.call('SetInputSettings', {
-          inputName: 'Media',
-          inputSettings: { input: url, is_local_file: false, looping: false }
-        });
+        await setOBSMediaSource(obs, url);
         const logo = (m3uMemCache?.channels || []).find(c => c.url === url)?.logo || null;
         if (nowPlaying?.url !== url) {
           const entry = { id: uuidv4(), scheduleId: null, scheduleName: name, url, logo, player: 'OBS', startedAt: new Date().toISOString(), status: 'launched' };
           history.push(entry);
-          if (history.length > MAX_HISTORY) history.shift();
-          saveHistory();
+          saveHistory(); // saveHistory() enforces MAX_HISTORY cap
           nowPlaying = { name, url, logo, startedAt: entry.startedAt };
           saveNowPlaying();
         }
