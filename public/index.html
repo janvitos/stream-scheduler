@@ -13,7 +13,7 @@
     @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: block; }
     @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
     @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-800-normal.woff2') format('woff2'); font-weight: 800; font-style: normal; font-display: block; }
-    body { visibility: hidden; }
+    #app-loader { position: fixed; inset: 0; background: #0b0d0f; z-index: 9999; }
   </style>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -503,6 +503,7 @@
   
 </head>
 <body>
+<div id="app-loader"></div>
 
 <!-- ── Sidebar ── -->
 <nav id="sidebar">
@@ -514,7 +515,7 @@
     </div>
   </div>
   <div class="sb-nav">
-    <div class="sb-item active" data-page="dashboard">
+    <div class="sb-item" data-page="dashboard">
       <span class="sb-icon">🏠</span> Dashboard
     </div>
 
@@ -544,7 +545,7 @@
   </div>
 
   <!-- ── Page: Dashboard ── -->
-  <div class="page active" id="page-dashboard">
+  <div class="page" id="page-dashboard">
     <div class="dashboard-grid">
 
       <!-- Left column: M3U Source, Search, Preview -->
@@ -809,7 +810,7 @@ function navTo(page) {
   document.querySelectorAll('.sb-item').forEach(e => e.classList.toggle('active', e.dataset.page === page));
   document.querySelectorAll('.page').forEach(e => e.classList.toggle('active', e.id === 'page-'+page));
   document.getElementById('page-title').textContent = pages[page] || page;
-  location.hash = page; // persist in URL
+  window.history.pushState(null, '', page === 'dashboard' ? '/' : '/' + page);
   if (page === 'dashboard') {
     Promise.all([loadSchedules(), loadHistory()]);
   }
@@ -1576,14 +1577,14 @@ function fmtDt(iso) {
 ═══════════════════════════════════════════ */
 (async () => {
   await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo(), loadAutoScheduler()]);
-  // Restore last visited page from URL hash, default to dashboard
-  const savedPage = location.hash.replace('#', '');
+  // Restore page from URL path, default to dashboard
+  const savedPage = location.pathname.replace(/^\//, '') || 'dashboard';
   navTo(savedPage || 'dashboard');
   connectDashboardSSE();
   connectAutoSchedSSE();
-  // Reveal page only after fonts and data are ready — prevents FOUC
+  // Remove loader only after fonts and data are ready — prevents FOUC
   await document.fonts.ready;
-  document.body.style.visibility = 'visible';
+  document.getElementById('app-loader').remove();
 })();
 
 

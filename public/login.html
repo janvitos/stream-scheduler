@@ -13,7 +13,7 @@
     @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: block; }
     @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
     @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-800-normal.woff2') format('woff2'); font-weight: 800; font-style: normal; font-display: block; }
-    body { visibility: hidden; }
+    #app-loader { position: fixed; inset: 0; background: #0b0d0f; z-index: 9999; }
   </style>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -156,6 +156,7 @@
   </style>
 </head>
 <body>
+<div id="app-loader"></div>
   <div class="glow glow-1"></div>
   <div class="glow glow-2"></div>
   <div class="card">
@@ -204,7 +205,7 @@
     };
     const showErr = (msg) => { err.textContent = msg; err.className = 'error show'; };
     document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); doLogin(); });
-    document.fonts.ready.then(() => { document.body.style.visibility = 'visible'; });
+    document.fonts.ready.then(() => { document.getElementById('app-loader').remove(); });
   </script>
 </body>
 </html>

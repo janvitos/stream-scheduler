@@ -853,6 +853,9 @@ function spawnFFmpegForClient(ws) {
 
 app.get('/api/preview/status', (req, res) => { res.json({ running: previewClients.size > 0 }); });
 
+// Catch-all: serve index.html for any unmatched route (enables History API navigation)
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 const server = require('http').createServer(app);
 
