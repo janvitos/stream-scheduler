@@ -12,7 +12,7 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 - **One-time schedules** — play a stream at a specific date and time, fires once then removes itself
 - **Recurring schedules** — use standard cron expressions for daily, weekly, or custom intervals
 - **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string
-- **OBS integration** — streams launch directly in OBS via WebSocket; no external player needed
+- **OBS integration** — streams launch directly in OBS via WebSocket, supporting both Media and VLC Video source types
 - **Live preview** — real-time stream preview in the browser via FFmpeg + Media Source Extensions
 - **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
 - **Playback history** — log of every stream launched with timestamps and status
@@ -53,13 +53,15 @@ You will be prompted to enter:
 
 This creates `data/config.json` with your hashed credentials.
 
-### 3. Configure OBS WebSocket
+### 3. Configure OBS
 
 In OBS Studio:
 1. Go to **Tools → WebSocket Server Settings**
 2. Enable the WebSocket server
 3. Set the port (default: `4455`)
 4. Set a password if desired (match it in StreamSched Settings)
+5. Add a source to your scene — either a **Media Source** named exactly `Media`, or a **VLC Video Source** named exactly `VLC Video`
+6. In StreamSched **Settings → OBS Source**, select which source type you are using
 
 ### 4. Start the server
 

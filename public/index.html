@@ -231,6 +231,7 @@
     .toggle-switch { width: 36px; height: 20px; border-radius: 10px; background: var(--border2); position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
     .toggle-knob   { width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left .2s; }
     .toggle-switch.toggle-on { background: var(--accent); }
+    #obs-source-toggle { background: var(--accent); }
     .toggle-switch.toggle-on .toggle-knob { left: 18px; }
 
     /* ── Status label ── */
@@ -645,6 +646,18 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">📺 OBS Source</div></div>
+          <div class="flex gap-8 align-center">
+            <span class="setting-text">Media</span>
+            <div id="obs-source-toggle" class="toggle-switch">
+              <div class="toggle-knob"></div>
+            </div>
+            <span class="setting-text">VLC Video</span>
+          </div>
+          <div class="help mt-8">The source must be named <strong>Media</strong> or <strong>VLC Video</strong> in OBS.</div>
         </div>
 
         <div class="card">
@@ -1154,6 +1167,7 @@ async function loadCacheInfo() {
     m3uRefreshEnabled = settingsRes.m3uAutoRefresh || false;
     document.getElementById('m3u-refresh-time').value = settingsRes.m3uRefreshTime || '06:00';
     updateM3URefreshToggle();
+    setToggleState('obs-source-toggle', (settingsRes.obsSourceType || 'media') === 'vlc');
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1263,6 +1277,13 @@ document.getElementById('m3u-refresh-time').addEventListener('input', debounce(a
   await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
   toast('Refresh time saved');
 }, 2000));
+
+document.getElementById('obs-source-toggle').addEventListener('click', async () => {
+  const isVLC = !document.getElementById('obs-source-toggle').classList.contains('toggle-on');
+  setToggleState('obs-source-toggle', isVLC);
+  await PUT('/api/settings', { obsSourceType: isVLC ? 'vlc' : 'media' });
+  toast(isVLC ? 'OBS source set to VLC Video' : 'OBS source set to Media');
+});
 
 // Search
 // Live search

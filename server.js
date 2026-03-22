@@ -438,12 +438,35 @@ async function ensureOBSStreaming() {
   }
 }
 
-// #11 — shared OBS media source setter
-function setOBSMediaSource(obs, url) {
-  return obs.call('SetInputSettings', {
-    inputName: 'Media',
-    inputSettings: { input: url, is_local_file: false, looping: false }
+// #11 — shared OBS source setter (supports Media and VLC Video source types)
+async function setOBSMediaSource(obs, url) {
+  const isVLC        = (settings.obsSourceType || 'media') === 'vlc';
+  const activeName   = isVLC ? 'VLC Video' : 'Media';
+  const inactiveName = isVLC ? 'Media' : 'VLC Video';
+
+  await obs.call('SetInputSettings', {
+    inputName:     activeName,
+    inputSettings: isVLC
+      ? { playlist: [{ value: url, hidden: false, selected: false }] }
+      : { input: url, is_local_file: false, looping: false }
   });
+
+  // Show active source, hide inactive source in the current scene
+  try {
+    const { currentProgramSceneName } = await obs.call('GetCurrentProgramScene');
+    const { sceneItems }              = await obs.call('GetSceneItemList', { sceneName: currentProgramSceneName });
+    for (const item of sceneItems) {
+      if (item.sourceName === activeName || item.sourceName === inactiveName) {
+        await obs.call('SetSceneItemEnabled', {
+          sceneName:        currentProgramSceneName,
+          sceneItemId:      item.sceneItemId,
+          sceneItemEnabled: item.sourceName === activeName
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[OBS] Could not control source visibility:', e.message);
+  }
 }
 
 async function launchPlayer(s) {
@@ -475,7 +498,7 @@ async function launchPlayer(s) {
     nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
     saveNowPlaying();
     pushDashboardEvent('nowplaying', { nowPlaying });
-    console.log('[OBS] Media source updated:', s.url);
+    console.log('[OBS] Source updated:', s.url);
   } catch (e) {
     entry.status = 'error';
     entry.error  = e.message;
@@ -795,13 +818,15 @@ app.post('/api/obs/stream/stop', async (req, res) => {
   try {
     await withOBS(async obs => {
       await obs.call('StopStream');
+      const isVLC      = (settings.obsSourceType || 'media') === 'vlc';
+      const sourceName = isVLC ? 'VLC Video' : 'Media';
       await obs.call('TriggerMediaInputAction', {
-        inputName:   'Media',
+        inputName:   sourceName,
         mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP'
       });
       await obs.call('SetInputSettings', {
-        inputName: 'Media',
-        inputSettings: { input: '', is_local_file: false, looping: false }
+        inputName:     sourceName,
+        inputSettings: isVLC ? { playlist: [] } : { input: '', is_local_file: false, looping: false }
       });
     });
     // Keep nowPlaying data but mark as stopped so Start knows the URL
