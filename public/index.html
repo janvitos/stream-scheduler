@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Stream Scheduler</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0b0d0f;
+      --surface:  #111418;
+      --surface2: #161b22;
+      --border:   #1e2329;
+      --border2:  #252c36;
+      --accent:   #00e5a0;
+      --accent2:  #0077ff;
+      --accent3:  #ff6b35;
+      --text:     #e8eaf0;
+      --muted:    #5a6070;
+      --muted2:   #8891a0;
+      --danger:   #ff4c6a;
+      --success:  #00e5a0;
+      --warn:     #ffb830;
+      --sidebar:  220px;
+      --radius:   10px;
+    }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar);
+      min-width: var(--sidebar);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      position: relative;
+      z-index: 10;
+    }
+    .sb-logo {
+      padding: 22px 18px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sb-logo-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; flex-shrink: 0;
+    }
+    .sb-logo-name { font-weight: 800; font-size: 15px; }
+    .sb-logo-ver  { font-size: 9px; color: var(--muted); font-family: 'Inter', sans-serif; }
+
+    .sb-nav { flex: 1; padding: 12px 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .sb-section { padding: 8px 14px 4px; font-size: 9px; font-weight: 700; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+    .sb-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-size: 13px; font-weight: 600;
+      color: var(--muted2);
+      transition: background .15s, color .15s;
+      position: relative;
+      margin: 1px 6px;
+      border-radius: 7px;
+    }
+    .sb-item:hover { background: var(--surface2); color: var(--text); }
+    .sb-item.active {
+      background: rgba(0,229,160,.1);
+      color: var(--accent);
+    }
+    .sb-item.active::before {
+      content: '';
+      position: absolute; left: -6px; top: 6px; bottom: 6px;
+      width: 3px; background: var(--accent); border-radius: 99px;
+    }
+    .sb-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+    .sb-badge {
+      margin-left: auto;
+      background: var(--accent);
+      color: #000;
+      font-size: 9px; font-weight: 700;
+      padding: 2px 6px; border-radius: 99px;
+      font-family: 'Inter', sans-serif;
+    }
+    .sb-footer {
+      padding: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .sb-footer button {
+      width: 100%; height: 38px; padding: 0 8px; box-sizing: border-box;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--muted2); font-size: 12px; font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .sb-footer button:hover { background: var(--surface2); }
+    #logoutBtn:hover { color: var(--danger); border-color: var(--danger); }
+    #restartBtn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Main ── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .topbar {
+      height: 56px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 24px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .topbar-title { font-size: 16px; font-weight: 800; flex: 1; }
+    .topbar-actions { display: flex; gap: 8px; }
+
+    .page { display: none; flex: 1; overflow-y: auto; padding: 24px; flex-direction: column; gap: 20px; }
+    .page.active { display: flex; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 38px; padding: 0 16px; box-sizing: border-box;
+      border-radius: 8px; border: 1px solid transparent;
+      font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px;
+      cursor: pointer; transition: opacity .15s, transform .1s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:active { transform: scale(.97); }
+    .btn-primary   { background: var(--accent);  color: #000; }
+    .btn-secondary { background: var(--surface2); color: var(--muted2); border: 1px solid var(--border2); }
+    .btn-secondary:not(:disabled):hover { color: var(--accent); border-color: var(--accent); }
+    .btn-danger    { background: rgba(255,76,106,.15); color: var(--danger); border: 1px solid rgba(255,76,106,.25); }
+    .btn-ghost     { background: transparent; color: var(--muted2); border: 1px solid var(--border); }
+    .btn-sm        { height: 38px; padding: 0 12px; font-size: 12px; border-radius: 6px; }
+    .btn:disabled  { opacity: .35; cursor: not-allowed; }
+    .btn-icon { width: 38px; height: 38px; padding: 0; justify-content: center; }
+
+    /* ── Cards ── */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .dashboard-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-width: 0;
+    }
+    @media (max-width: 768px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; min-height: 25px; }
+    .card-title  { font-size: 14px; font-weight: 800; flex: 1; }
+
+    /* ── Stats row ── */
+    .stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .stat-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+    .stat-val   { font-size: 28px; font-weight: 800; font-family: 'Inter', sans-serif; }
+    .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .stat-accent  { color: var(--accent); }
+    .stat-accent2 { color: var(--accent2); }
+    .stat-warn    { color: var(--warn); }
+    .stat-danger  { color: var(--danger); }
+
+    /* ── Form ── */
+    .form-grid { display: grid; gap: 16px; }
+    .form-grid-2 { grid-template-columns: 1fr 1fr; }
+    .form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    label.lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; }
+    input[type=text], input[type=password], input[type=number],
+    input[type=datetime-local], input[type=time], select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      height: 38px; padding: 0 12px; box-sizing: border-box;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      width: 100%;
+    }
+    input:disabled, select:disabled { opacity: .35; cursor: not-allowed; }
+    input[type=time] { width: auto; padding: 0 6px; }
+
+    /* ── Toggle switch ── */
+    .toggle-switch { width: 36px; height: 20px; border-radius: 10px; background: var(--border2); position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+    .toggle-knob   { width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left .2s; }
+
+    /* ── Status label ── */
+    .status-label { font-size: 11px; color: var(--muted); }
+
+    /* ── Progress bar ── */
+    .progress-track { height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .progress-fill  { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 99px; transition: width .25s ease; }
+
+    /* ── Message boxes ── */
+    .msg-box     { display: none; border-radius: 8px; padding: 10px 14px; font-family: 'Inter', sans-serif; font-size: 12px; }
+    .msg-error   { background: rgba(255,76,106,.1); border: 1px solid rgba(255,76,106,.3); color: var(--danger); }
+    .msg-success { background: rgba(0,229,160,.08); border: 1px solid rgba(0,229,160,.25); color: var(--accent); }
+    textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      width: 100%;
+    }
+    /* Fix browser autofill background color */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+      -webkit-box-shadow: 0 0 0px 1000px var(--bg) inset !important;
+      -webkit-text-fill-color: var(--text) !important;
+      border-color: var(--border) !important;
+      caret-color: var(--text);
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,229,160,.1);
+    }
+    select option { background: var(--surface2); }
+    textarea { resize: vertical; min-height: 70px; }
+    .help { font-size: 11px; color: var(--muted); font-family: 'Inter', sans-serif; }
+
+    /* ── Shared item row ── */
+    .item-list  { display: flex; flex-direction: column; gap: 8px; }
+    .media-row  {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+    }
+    .item-info  { flex: 1; min-width: 0; }
+    .item-name  { font-weight: 700; font-size: 14px; color: var(--text); word-break: break-word; margin-bottom: 3px; }
+    .item-url   { font-size: 11px; color: var(--muted); font-family: 'Inter', sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+    .item-meta  { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+    .item-tag   { font-size: 11px; font-family: 'Inter', sans-serif; padding: 2px 7px; border-radius: 4px; font-weight: 700; display: inline-flex; align-items: center; }
+    .tag-channel { background: rgba(180,100,255,.15); color: #b464ff; }
+    .tag-once   { background: rgba(0,119,255,.15); color: var(--accent2); }
+    .tag-cron   { background: rgba(255,107,53,.15); color: var(--accent3); }
+
+    /* ── Schedule list ── */
+    .sched-item { padding: 14px 16px; gap: 14px; border-radius: var(--radius); transition: border-color .2s; }
+    .sched-item:hover { border-color: var(--border2); }
+    .sched-item.disabled { opacity: .5; }
+    .sched-color { width: 4px; align-self: stretch; border-radius: 99px; flex-shrink: 0; }
+    .sched-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
+    .sched-btn {
+      width: 38px; height: 38px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 6px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--muted2);
+      font-size: 13px; cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .sched-btn:hover { background: var(--border2); color: var(--accent); border-color: var(--accent); }
+    .sched-btn-run:hover    { color: var(--accent); border-color: var(--accent); }
+    .sched-btn-edit:hover   { color: var(--accent2); border-color: var(--accent2); }
+    .sched-btn-delete:hover { color: var(--danger); border-color: var(--danger); }
+    .sched-btn-toggle.enabled  { color: var(--accent); }
+    .sched-btn-toggle.disabled { color: var(--muted); }
+
+    /* ── M3U search ── */
+    .channel-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+    .item-logo { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
+    .item-logo-placeholder { width: 32px; height: 32px; border-radius: 6px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+    .item-logo-placeholder.hidden { display: none; }
+
+
+    /* ── History ── */
+    .hist-dot     { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .hist-run-btn { margin-left: auto; flex-shrink: 0; }
+    .st-launched  { background: rgba(0,229,160,.12); color: var(--accent); }
+    .st-error     { background: rgba(255,76,106,.12); color: var(--danger); }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    .modal-overlay.show { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%; max-width: 520px;
+      padding: 28px;
+      max-height: 90vh; overflow-y: auto;
+      transform: translateY(20px) scale(.97);
+      transition: transform .25s cubic-bezier(.22,1,.36,1);
+    }
+    .modal-overlay.show .modal { transform: none; }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 22px; }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+    /* ── Toast ── */
+    #toast-container {
+      position: fixed; bottom: 24px; right: 24px;
+      display: flex; flex-direction: column; gap: 8px;
+      z-index: 9999; pointer-events: none;
+    }
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px; font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      display: flex; align-items: center; gap: 10px;
+      animation: toastIn .3s cubic-bezier(.22,1,.36,1) both;
+      pointer-events: all;
+    }
+    .toast.out { animation: toastOut .25s ease forwards; }
+    @keyframes toastIn  { from { opacity:0; transform: translateX(30px) scale(.95); } }
+    @keyframes toastOut { to   { opacity:0; transform: translateX(30px) scale(.95); } }
+    .toast-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center; padding: 0px 20px 40px; color: var(--muted);
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .5; }
+    .empty p { font-size: 13px; }
+
+    /* ── Toggle switch ── */
+
+
+    /* ── Misc ── */
+    .sep { height: 1px; background: var(--border); margin: 4px 0; }
+    .flex { display: flex; }
+    .flex-1 { flex: 1; }
+    .gap-8  { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .align-center { align-items: center; }
+    .mono { font-family: 'Inter', sans-serif; }
+    .text-muted   { color: var(--muted); }
+    .text-accent  { color: var(--accent); }
+    .text-danger  { color: var(--danger); }
+    .text-sm { font-size: 12px; }
+    .setting-text { font-size: 13px; }
+    .cursor-pointer { cursor: pointer; }
+    .items-center   { align-items: center; }
+    .mt-8  { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+    .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
+    .btn-loading::after { content: ''; position: absolute; top: 50%; left: 50%; margin-top: -7px; margin-left: -7px; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #m3u-get-btn { min-width: 90px; justify-content: center; }
+
+    /* ── Hamburger ── */
+    .hamburger {
+      display: none;
+      flex-direction: column; justify-content: center; gap: 5px;
+      width: 38px; height: 38px; padding: 6px;
+      background: none; border: none; cursor: pointer; flex-shrink: 0;
+    }
+    .hamburger span {
+      display: block; height: 2px; border-radius: 2px;
+      background: var(--text); transition: transform .25s, opacity .25s;
+    }
+
+    /* Sidebar backdrop */
+    #sidebar-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 19;
+    }
+    #sidebar-backdrop.show { display: block; }
+
+    /* ── Mobile (≤ 640px) ── */
+    @media (max-width: 640px) {
+      body { overflow: hidden; }
+
+      /* Sidebar becomes a slide-in drawer */
+      #sidebar {
+        position: fixed; left: 0; top: 0; bottom: 0;
+        z-index: 20;
+        transform: translateX(-100%);
+        transition: transform .28s cubic-bezier(.22,1,.36,1);
+        width: 240px; min-width: 240px;
+        box-shadow: 4px 0 24px rgba(0,0,0,.5);
+      }
+      #sidebar.open { transform: translateX(0); }
+
+      .hamburger { display: flex; }
+
+      /* Topbar tighter */
+      .topbar { padding: 0 14px; height: 52px; }
+      .topbar-title { font-size: 15px; }
+
+      /* Pages full width with less padding */
+      .page { padding: 14px; gap: 14px; }
+
+      /* Stats: 2 columns on mobile */
+      .stats-row { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .stat-val  { font-size: 22px; }
+
+      /* Form grids: single column */
+      .form-grid-2 { grid-template-columns: 1fr; }
+      .form-grid-3 { grid-template-columns: 1fr; }
+
+      /* Cards less padding */
+      .card { padding: 14px; }
+
+      /* All cards: wrap actions below info on small screens */
+      .media-row { padding: 10px 12px; flex-wrap: wrap; align-items: flex-start; }
+      .sched-item { gap: 10px; }
+      .item-logo, .item-logo-placeholder { width: 28px; height: 28px; }
+      .sched-actions { width: 100%; display: flex; gap: 8px; justify-content: flex-end; }
+      .sched-actions .btn { flex: 1; justify-content: center; }
+
+      /* Buttons: bigger tap targets */
+      .btn { padding: 0 16px; }
+      .btn-sm { padding: 0 12px; }
+      .btn-icon { width: 38px; height: 38px; }
+
+      /* Modal: full-width on mobile */
+      .modal { max-width: 100%; margin: 0 12px; padding: 20px; }
+
+      /* M3U search row: wrap */
+
+      #preview-video { height: 200px !important; }
+    }
+
+    /* ── Tablet (641–900px) ── */
+    @media (min-width: 641px) and (max-width: 900px) {
+      :root { --sidebar: 180px; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .form-grid-2 { grid-template-columns: 1fr; }
+      .page { padding: 16px; gap: 16px; }
+    }
+
+    #now-playing-info { margin-top: 12px; }
+    .np-header { align-items: flex-end; }
+    .np-sep { margin-top: 16px; }
+    .np-activity-header { margin-top: 16px; }
+    .no-stream-active { font-size:12px; color:var(--muted); }
+    .tag-muted { background:rgba(90,96,112,.1); color:var(--muted); }
+    #stream-toggle-btn { min-width:90px; justify-content:center; }
+    #preview-toggle-btn { transition: background .15s, color .15s, border-color .15s; }
+    .np-header-actions { display:flex; align-items:center; gap:8px; }
+    .pw-result { font-size:12px; }
+  </style>
+  
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<nav id="sidebar">
+  <div class="sb-logo">
+    <img src="/logo.svg" class="sb-logo-icon" alt="StreamSched" style="width:32px;height:32px;border-radius:50%;display:block">
+    <div>
+      <div class="sb-logo-name">StreamSched</div>
+      <div class="sb-logo-ver">v1.0</div>
+    </div>
+  </div>
+  <div class="sb-nav">
+    <div class="sb-item active" data-page="dashboard">
+      <span class="sb-icon">🏠</span> Dashboard
+    </div>
+
+
+
+    <div class="sb-item" data-page="settings">
+      <span class="sb-icon">⚙️</span> Settings
+    </div>
+  </div>
+  <div class="sb-footer">
+    <button id="restartBtn" type="button">↺  Restart Service</button>
+    <div style="height:8px"></div>
+    <button id="logoutBtn" type="button">⏻  Sign Out</button>
+  </div>
+</nav>
+
+<!-- ── Main ── -->
+<div id="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="hamburger" id="hamburger-btn" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="topbar-actions" id="topbar-actions"></div>
+  </div>
+
+  <!-- ── Page: Dashboard ── -->
+  <div class="page active" id="page-dashboard">
+    <div class="dashboard-grid">
+
+      <!-- Left column: M3U Source, Search, Preview -->
+      <div class="dashboard-col">
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">🔍 Search Channels</div></div>
+          <div class="flex gap-8">
+            <input type="text" id="m3u-search" placeholder="Channel name…" class="flex-1" disabled/>
+          </div>
+          <div class="help mt-8" id="m3u-search-help" style="margin-bottom:8px">Download or load a cached M3U file first to enable search.</div>
+          <div id="m3u-results-wrap" style="display:none">
+            <div class="channel-list" id="channel-list"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header np-header">
+            <div class="card-title">🎥 Now Playing</div>
+            <div class="np-header-actions">
+              <button class="btn btn-secondary btn-sm" id="preview-toggle-btn" type="button" title="Show/Hide Preview">👁</button>
+              <button class="btn btn-primary" id="stream-toggle-btn" type="button">Stream</button>
+            </div>
+          </div>
+          <!-- Stream info -->
+          <div id="now-playing-info" class="media-row">
+            <span class="no-stream-active">// no stream active</span>
+          </div>
+
+          <div id="preview-wrap" style="display:none;margin-top:12px;line-height:0">
+            <video id="preview-video" controls muted playsinline style="width:100%;border-radius:8px;background:#000;height:360px;object-fit:contain;display:block"></video>
+          </div>
+
+          <div class="sep np-sep"></div>
+
+          <div class="card-header np-activity-header">
+            <div class="card-title">🕐 Recent Activity</div>
+          </div>
+          <div id="recent-history"></div>
+        </div>
+
+      </div>
+
+      <!-- Right column: Schedules -->
+      <div class="dashboard-col">
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">📅 Schedules</div></div>
+          <div id="sched-list-wrap">
+            <div class="empty"><div class="empty-icon">◷</div><p>No schedules yet. Click "New Schedule" to add one.</p></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+
+
+
+  <!-- ── Page: Settings ── -->
+  <div class="page" id="page-settings">
+    <div class="dashboard-grid">
+      <div class="dashboard-col">
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">📡 Xtream / M3U Source</div></div>
+          <div class="form-grid">
+            <div class="field">
+              <label class="lbl">M3U or Xtream URL</label>
+              <div class="flex gap-8">
+                <input type="text" id="m3u-url" name="m3u-url" placeholder="http://server/get.php?username=X&password=Y&type=m3u_plus&output=ts" class="flex-1"/>
+                <button class="btn btn-primary" id="m3u-get-btn" type="button">Get</button>
+              </div>
+              <div class="help" id="m3u-cache-hint"></div>
+            </div>
+            <div id="m3u-progress-wrap" style="display:none">
+              <div class="flex mt-8" style="justify-content:space-between;margin-bottom:8px">
+                <span class="lbl" id="m3u-progress-label">Downloading…</span>
+                <span class="mono text-sm" id="m3u-progress-pct" style="color:var(--accent)"></span>
+              </div>
+              <div class="progress-track">
+                <div id="m3u-progress-bar" class="progress-fill"></div>
+              </div>
+              <div class="mono text-sm status-label" style="margin-top:4px" id="m3u-progress-bytes"></div>
+            </div>
+            <div id="m3u-error"   class="msg-box msg-error"></div>
+            <div id="m3u-success" class="msg-box msg-success"></div>
+            <div class="flex gap-8 mt-8 align-center" style="flex-wrap:wrap">
+              <span class="setting-text">Auto-refresh daily at</span>
+              <input type="time" id="m3u-refresh-time" disabled/>
+              <div id="m3u-refresh-toggle" class="toggle-switch">
+                <div id="m3u-refresh-knob" class="toggle-knob"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🤖 Auto-Scheduler</div>
+            <label class="flex gap-8 items-center cursor-pointer">
+              <div id="as-toggle" class="toggle-switch">
+                <div id="as-knob" class="toggle-knob"></div>
+              </div>
+            </label>
+          </div>
+          <div class="form-grid form-grid-2">
+            <div class="field">
+              <label class="lbl">Search String</label>
+              <input type="text" id="as-search" placeholder="e.g. Texas Tech"/>
+            </div>
+            <div class="field">
+              <label class="lbl">Daily Check Time (Eastern)</label>
+              <input type="time" id="as-time"/>
+            </div>
+          </div>
+          <div class="field mt-16">
+            <label class="lbl">API Endpoint</label>
+            <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
+          </div>
+          <div id="as-refresh-row" class="flex gap-8 mt-16 align-center">
+            <span class="setting-text">Refresh M3U before running</span>
+            <div id="as-refresh-toggle" class="toggle-switch">
+              <div id="as-refresh-knob" class="toggle-knob"></div>
+            </div>
+          </div>
+          <div class="flex gap-8 mt-12">
+            <button class="btn btn-primary" id="as-run-btn" type="button">▶ Run Now</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">🔒 Change Password</div></div>
+          <div class="form-grid">
+            <div class="field">
+              <label class="lbl">New Password</label>
+              <input type="password" id="set-pw-new" placeholder="Min 6 characters" autocomplete="new-password"/>
+            </div>
+            <div class="field">
+              <label class="lbl">Confirm Password</label>
+              <input type="password" id="set-pw-confirm" placeholder="Repeat new password" autocomplete="new-password"/>
+            </div>
+          </div>
+          <div id="pw-result" class="mt-8"></div>
+          <div class="mt-12">
+            <button class="btn btn-primary" id="save-pw-btn" type="button">Change Password</button>
+          </div>
+        </div>
+
+      </div>
+      <div class="dashboard-col">
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🕐 Activity Log</div>
+          </div>
+          <div id="as-log"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- #main -->
+<div id="sidebar-backdrop"></div>
+
+<!-- ── Modal: New/Edit Schedule ── -->
+<div class="modal-overlay" id="sched-modal">
+  <div class="modal">
+    <div class="modal-title" id="sched-modal-title">New Schedule</div>
+    <div class="form-grid">
+      <div class="field">
+        <label class="lbl">Name</label>
+        <input type="text" id="sm-name" name="sm-name" placeholder="My Stream" />
+      </div>
+      <div class="field">
+        <label class="lbl">Stream URL</label>
+        <input type="text" id="sm-url" name="sm-url" placeholder="http://…" />
+      </div>
+      <div class="field">
+        <label class="lbl">Schedule Type</label>
+        <select id="sm-type">
+          <option value="now">Now</option>
+          <option value="once">One-time</option>
+          <option value="cron">Recurring (cron)</option>
+        </select>
+      </div>
+      <div class="field" id="sm-once-wrap">
+        <label class="lbl">Run At</label>
+        <input type="datetime-local" id="sm-runat" step="60" />
+      </div>
+      <div class="field" id="sm-cron-wrap" style="display:none">
+        <label class="lbl">Cron Expression</label>
+        <input type="text" id="sm-cron" name="sm-cron" placeholder="0 20 * * 1-5  (weekdays at 8 PM)" />
+        <div class="help">Standard 5-field cron: min hour day month weekday</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="sched-modal-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="sched-modal-save" type="button">Save Schedule</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Add to Schedule (from M3U) ── -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-title">Add Channel to Schedule</div>
+    <div class="form-grid">
+      <div class="field">
+        <label class="lbl">Name</label>
+        <input type="text" id="am-name" name="am-name" />
+      </div>
+      <div class="field">
+        <label class="lbl">Stream URL</label>
+        <input type="text" id="am-url" readonly style="color:var(--muted);font-size:11px;" />
+      </div>
+      <div class="field">
+        <label class="lbl">Schedule Type</label>
+        <select id="am-type">
+          <option value="now">Now</option>
+          <option value="once">One-time</option>
+          <option value="cron">Recurring (cron)</option>
+        </select>
+      </div>
+      <div class="field" id="am-once-wrap">
+        <label class="lbl">Run At</label>
+        <input type="datetime-local" id="am-runat" step="60" />
+      </div>
+      <div class="field" id="am-cron-wrap" style="display:none">
+        <label class="lbl">Cron Expression</label>
+        <input type="text" id="am-cron" name="am-cron" placeholder="0 20 * * 1-5" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="add-modal-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="add-modal-save" type="button">Add to Schedules</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+/* ═══════════════════════════════════════════
+   State
+═══════════════════════════════════════════ */
+let schedules = [];
+let history   = [];
+
+/* ═══════════════════════════════════════════
+   Navigation
+═══════════════════════════════════════════ */
+const pages = { dashboard:'Dashboard', settings:'Settings' };
+document.querySelectorAll('.sb-item[data-page]').forEach(el => {
+  el.addEventListener('click', () => { navTo(el.dataset.page); closeSidebar(); });
+});
+function navTo(page) {
+  if (!pages[page]) page = 'dashboard'; // guard against unknown pages
+  document.querySelectorAll('.sb-item').forEach(e => e.classList.toggle('active', e.dataset.page === page));
+  document.querySelectorAll('.page').forEach(e => e.classList.toggle('active', e.id === 'page-'+page));
+  document.getElementById('page-title').textContent = pages[page] || page;
+  location.hash = page; // persist in URL
+  if (page === 'dashboard') {
+    Promise.all([loadSchedules(), loadHistory()]);
+  }
+  connectDashboardSSE(); // always connected regardless of current page
+  if (page === 'settings') loadAutoScheduler();
+}
+
+// Sidebar drawer (mobile)
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+document.getElementById('hamburger-btn').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
+});
+document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
+
+/* ═══════════════════════════════════════════
+   API helpers
+═══════════════════════════════════════════ */
+const api = async (method, path, body) => {
+  const r = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (r.status === 401) { location.href = '/login'; throw new Error('Unauthorized'); }
+  return r.json();
+};
+const GET    = p     => api('GET',    p);
+const POST   = (p,b) => api('POST',   p, b);
+const PUT    = (p,b) => api('PUT',    p, b);
+const DELETE = p     => api('DELETE', p);
+
+/* ═══════════════════════════════════════════
+   Toast
+═══════════════════════════════════════════ */
+function toast(msg, type='ok') {
+  const colors = { ok: 'var(--accent)', error: 'var(--danger)', warn: 'var(--warn)' };
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<div class="toast-dot" style="background:${colors[type]||colors.ok}"></div>${msg}`;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+/* ═══════════════════════════════════════════
+   Schedules
+═══════════════════════════════════════════ */
+async function loadSchedules() {
+  schedules = await GET('/api/schedules');
+  renderSchedules();
+  renderDashboard();
+  if (document.getElementById('page-settings').classList.contains('active')) {
+    GET('/api/auto-scheduler').then(data => { asData = data; renderAsLog(); });
+  }
+}
+
+function renderSchedules() {
+  const wrap = document.getElementById('sched-list-wrap');
+  if (!schedules.length) {
+    wrap.innerHTML = '<div class="empty"><div class="empty-icon">◷</div><p>No schedules yet.</p></div>';
+    return;
+  }
+  wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
+  const list = document.getElementById('sched-list');
+  schedules.forEach(s => list.appendChild(makeSchedItem(s)));
+}
+
+function makeSchedItem(s) {
+  const div = document.createElement('div');
+  div.className = 'media-row sched-item';
+  const { channel: sChannel, title: sTitle } = parseName(s.name);
+  div.innerHTML = `
+    ${logoImg(s.logo)}
+    <div class="item-info">
+      <div class="item-name">${esc(sTitle || s.name)}</div>
+      <div class="item-url">${esc(s.url)}</div>
+      <div class="item-meta">
+        ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-muted">${fmtDt(s.runAt)}</span>`:''}
+        ${s.scheduleType==='cron'?`<span class="item-tag tag-muted">${esc(s.cronExpr||'')}</span>`:''}
+        ${channelTag(sChannel)}
+        <span class="item-tag ${s.scheduleType==='cron'?'tag-cron':'tag-once'}">${s.scheduleType==='cron'?'RECURRING':'ONE-TIME'}</span>
+        ${s.lastRun?`<span class="item-tag tag-muted">Last: ${fmtDt(s.lastRun)}</span>`:''}
+      </div>
+    </div>
+    <div class="sched-actions">
+      <button class="sched-btn sched-btn-run"    title="Run now"  data-action="run"    data-id="${s.id}">▶</button>
+      <button class="sched-btn sched-btn-edit"   title="Edit"     data-action="edit"   data-id="${s.id}">✎</button>
+      <button class="sched-btn sched-btn-delete" title="Delete"   data-action="delete" data-id="${s.id}">✕</button>
+    </div>`;
+  div.querySelectorAll('[data-action]').forEach(el => {
+    const action = el.dataset.action;
+    const id     = el.dataset.id;
+    if (action === 'run')    el.addEventListener('click', () => runNow(id));
+    if (action === 'delete') el.addEventListener('click', () => deleteSchedule(id));
+    if (action === 'edit')   el.addEventListener('click', () => openEditModal(id));
+  });
+  return div;
+}
+
+async function runNow(id) {
+  await POST(`/api/schedules/${id}/run`);
+  toast('▶ Player launched!');
+  await loadHistory();
+  renderDashboard();
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('Delete this schedule?')) return;
+  await DELETE(`/api/schedules/${id}`);
+  toast('Schedule deleted', 'warn');
+  loadSchedules();
+}
+
+/* ═══════════════════════════════════════════
+   Schedule Modal
+═══════════════════════════════════════════ */
+let editingId = null;
+
+function openNewModal() {
+  editingId = null;
+  document.getElementById('sched-modal-title').textContent = 'New Schedule';
+  document.getElementById('sm-name').value   = '';
+  document.getElementById('sm-url').value    = '';
+  document.getElementById('sm-type').value   = 'now';
+  document.getElementById('sm-runat').value  = localDateTimeValue();
+  document.getElementById('sm-cron').value   = '';
+  toggleTypeFields('sm', 'now');
+  showModal('sched-modal');
+}
+
+function openEditModal(id) {
+  const s = schedules.find(x => x.id === id);
+  if (!s) return;
+  editingId = id;
+  document.getElementById('sched-modal-title').textContent = 'Edit Schedule';
+  document.getElementById('sm-name').value   = s.name;
+  document.getElementById('sm-url').value    = s.url;
+  document.getElementById('sm-type').value   = s.scheduleType;
+  document.getElementById('sm-runat').value  = s.runAt ? s.runAt.slice(0,16) : '';
+  document.getElementById('sm-cron').value   = s.cronExpr || '';
+  toggleTypeFields('sm', s.scheduleType);
+  showModal('sched-modal');
+}
+
+function toggleTypeFields(prefix, v) {
+  document.getElementById(prefix + '-once-wrap').style.display = v==='once' ? '' : 'none';
+  document.getElementById(prefix + '-cron-wrap').style.display = v==='cron' ? '' : 'none';
+}
+document.getElementById('sm-type').addEventListener('change', e => toggleTypeFields('sm', e.target.value));
+
+document.getElementById('sched-modal-cancel').addEventListener('click', () => hideModal('sched-modal'));
+document.getElementById('sched-modal-save').addEventListener('click', async () => {
+  const smType = document.getElementById('sm-type').value;
+  const url    = document.getElementById('sm-url').value.trim();
+  if (!url) { toast('Stream URL is required', 'error'); return; }
+
+  if (smType === 'now') {
+    await POST('/api/play-now', {
+      name:       document.getElementById('sm-name').value || 'Untitled',
+      url,
+    });
+    toast('▶ Playing now!');
+    hideModal('sched-modal');
+    await loadHistory();
+      return;
+  }
+
+  const body = {
+    name:         document.getElementById('sm-name').value || 'Untitled',
+    url,
+    scheduleType: smType,
+    runAt:        document.getElementById('sm-runat').value || null,
+    cronExpr:     document.getElementById('sm-cron').value.trim() || null,
+  };
+  if (editingId) {
+    await PUT(`/api/schedules/${editingId}`, body);
+    toast('Schedule updated');
+  } else {
+    await POST('/api/schedules', body);
+    toast('Schedule created');
+  }
+  hideModal('sched-modal');
+  loadSchedules();
+});
+
+/* ═══════════════════════════════════════════
+   Dashboard
+═══════════════════════════════════════════ */
+async function renderDashboard() {
+  // Recent activity — skip history[0] (shown in Now Playing), cap at 5
+  const rh = document.getElementById('recent-history');
+  const recent = history.slice(obsStreaming ? 1 : 0, obsStreaming ? 6 : 5);
+  if (!recent.length) { rh.innerHTML = '<div class="empty"><div class="empty-icon">☰</div><p>No recent activity.</p></div>'; return; }
+  rh.innerHTML = '<div class="item-list"></div>';
+  const hl = rh.querySelector('.item-list');
+  recent.forEach(h => hl.appendChild(makeHistoryItem(h)));
+}
+
+/* ═══════════════════════════════════════════
+   History
+═══════════════════════════════════════════ */
+async function loadHistory() {
+  history = await GET('/api/history');
+  renderDashboard();
+  // Sync Now Playing from history only when not streaming (SSE handles it when streaming)
+  if (!obsStreaming && history.length > 0) {
+    const h = history[0];
+    nowPlayingData = { name: h.scheduleName, url: h.url, logo: h.logo || null, startedAt: h.startedAt };
+    updateNowPlaying(false, nowPlayingData);
+  }
+}
+
+function makeHistoryItem(h) {
+  const div = document.createElement('div');
+  div.className = 'media-row';
+  const { channel: hChannel, title: hTitle } = parseName(h.scheduleName);
+  div.innerHTML = `
+    ${logoImg(h.logo)}
+    <div class="item-info">
+      <div class="item-name">${esc(hTitle || h.scheduleName || 'Unknown')}</div>
+      ${h.url ? `<div class="item-url">${esc(h.url)}</div>` : ''}
+      <div class="item-meta">
+        <span class="item-tag tag-muted">${fmtDt(h.startedAt)}</span>
+        ${channelTag(hChannel)}
+      </div>
+    </div>
+    ${h.url ? `<button class="sched-btn sched-btn-run hist-run-btn" title="Run again">▶</button>` : ''}`;
+  if (h.url) {
+    div.querySelector('.hist-run-btn').addEventListener('click', async () => {
+      const btn = div.querySelector('.hist-run-btn');
+      btn.disabled = true;
+      nowPlayingData = { name: h.scheduleName, url: h.url, logo: h.logo || null, startedAt: new Date().toISOString() };
+      obsStreaming = true;
+      updateNowPlaying(true, nowPlayingData);
+      await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
+      toast('▶ Launching…');
+      await loadHistory();
+      btn.disabled = false;
+    });
+  }
+  return div;
+}
+
+
+/* ═══════════════════════════════════════════
+   M3U
+═══════════════════════════════════════════ */
+let m3uReady = false;
+
+function fmtBytes(b) {
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+
+function fmtAge(fetchedAt) {
+  const mins = Math.round((Date.now() - fetchedAt) / 60000);
+  if (mins < 1)   return 'just now';
+  if (mins < 60)  return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs  < 24)  return hrs + 'h ago';
+  return Math.round(hrs / 24) + 'd ago';
+}
+
+function setSearchEnabled(on) {
+  const searchInp = document.getElementById('m3u-search');
+  searchInp.disabled = !on;
+  if (on) document.getElementById('m3u-search-help').textContent = '';
+}
+
+function showM3UError(msg) {
+  const el = document.getElementById('m3u-error');
+  el.textContent = '✗ ' + msg;
+  el.style.display = 'block';
+  document.getElementById('m3u-success').style.display = '';
+}
+
+function showM3USuccess(msg) {
+  const el = document.getElementById('m3u-success');
+  el.textContent = '✓ ' + msg;
+  el.style.display = 'block';
+  document.getElementById('m3u-error').style.display = '';
+}
+
+function resetProgress() {
+  document.getElementById('m3u-progress-wrap').style.display = 'none';
+  document.getElementById('m3u-progress-bar').style.width    = '0%';
+  document.getElementById('m3u-progress-pct').textContent    = '';
+  document.getElementById('m3u-progress-bytes').textContent  = '';
+  document.getElementById('m3u-progress-label').textContent  = 'Downloading…';
+  document.getElementById('m3u-error').style.display         = '';
+  document.getElementById('m3u-success').style.display       = '';
+}
+
+let m3uCachedSourceUrl = '';
+let m3uRefreshEnabled = false;
+
+function updateGetBtn() {
+  const btn = document.getElementById('m3u-get-btn');
+  const inputUrl = document.getElementById('m3u-url').value.trim();
+  btn.textContent = (m3uCachedSourceUrl && inputUrl === m3uCachedSourceUrl) ? 'Refresh' : 'Get';
+}
+
+function updateM3URefreshToggle() {
+  const toggle  = document.getElementById('m3u-refresh-toggle');
+  const knob    = document.getElementById('m3u-refresh-knob');
+  const timeInp = document.getElementById('m3u-refresh-time');
+  toggle.style.background  = m3uRefreshEnabled ? 'var(--accent)' : 'var(--border2)';
+  knob.style.left          = m3uRefreshEnabled ? '18px' : '2px';
+  timeInp.disabled         = !m3uRefreshEnabled;
+}
+
+// Auto-load cache on page open
+async function loadCacheInfo() {
+  const hint = document.getElementById('m3u-cache-hint');
+  try {
+    const [cacheRes, settingsRes] = await Promise.all([POST('/api/m3u/use-cache', {}), GET('/api/settings')]);
+    if (cacheRes.ok) {
+      m3uReady = true;
+      m3uCachedSourceUrl = cacheRes.sourceUrl || '';
+      hint.textContent = '⊟ Cached file loaded — ' + cacheRes.count.toLocaleString() + ' channels · downloaded ' + fmtAge(cacheRes.fetchedAt) + '.';
+      hint.style.color = 'var(--accent)';
+      setSearchEnabled(true);
+      if (cacheRes.sourceUrl && !document.getElementById('m3u-url').value.trim()) {
+        document.getElementById('m3u-url').value = cacheRes.sourceUrl;
+      }
+      updateGetBtn();
+    } else {
+      m3uCachedSourceUrl = '';
+      hint.textContent = 'No cached file yet — enter a URL and click Get.';
+      hint.style.color = '';
+      updateGetBtn();
+    }
+    m3uRefreshEnabled = settingsRes.m3uAutoRefresh || false;
+    document.getElementById('m3u-refresh-time').value = settingsRes.m3uRefreshTime || '06:00';
+    updateM3URefreshToggle();
+  } catch(e) {
+    hint.textContent = 'No cached file yet — enter a URL and click Get.';
+    hint.style.color = '';
+  }
+}
+
+// Shared download function — called by both Get and Refresh buttons
+function startM3UDownload(url, triggerBtn) {
+  resetProgress();
+  const wasReady = m3uReady;
+  setSearchEnabled(false);
+  m3uReady = false;
+  document.getElementById('m3u-results-wrap').style.display = 'none';
+  document.getElementById('channel-list').innerHTML = '';
+
+  const getBtn = document.getElementById('m3u-get-btn');
+  getBtn.disabled = true;
+  getBtn.classList.add('btn-loading');
+
+  const progressWrap = document.getElementById('m3u-progress-wrap');
+  const bar          = document.getElementById('m3u-progress-bar');
+  const pctEl        = document.getElementById('m3u-progress-pct');
+  const bytesEl      = document.getElementById('m3u-progress-bytes');
+  const labelEl      = document.getElementById('m3u-progress-label');
+  progressWrap.style.display = '';
+
+  const sse = new EventSource('/api/m3u/download?url=' + encodeURIComponent(url));
+
+  sse.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'start') {
+      labelEl.textContent = 'Connecting…';
+    } else if (msg.type === 'progress') {
+      if (msg.pct >= 0) {
+        bar.style.width     = msg.pct + '%';
+        pctEl.textContent   = msg.pct + '%';
+        labelEl.textContent = 'Downloading…';
+      } else {
+        bar.style.transition = 'none';
+        bar.style.width      = '100%';
+        bar.style.opacity    = '0.5';
+        pctEl.textContent    = '';
+        labelEl.textContent  = 'Downloading…';
+      }
+      bytesEl.textContent = msg.total > 0
+        ? fmtBytes(msg.received) + ' / ' + fmtBytes(msg.total)
+        : fmtBytes(msg.received) + ' received';
+    } else if (msg.type === 'parsing') {
+      bar.style.transition = '';
+      bar.style.width      = '100%';
+      bar.style.opacity    = '1';
+      pctEl.textContent    = '100%';
+      labelEl.textContent  = 'Parsing channels…';
+      bytesEl.textContent  = '';
+    } else if (msg.type === 'done') {
+      sse.close();
+      m3uReady = true;
+      progressWrap.style.display = 'none';
+      const hint = document.getElementById('m3u-cache-hint');
+      hint.textContent = '⊟ Cached file loaded — ' + msg.count.toLocaleString() + ' channels · just downloaded.';
+      hint.style.color = 'var(--accent)';
+      showM3USuccess(msg.count.toLocaleString() + ' channels downloaded and ready to search.');
+      setSearchEnabled(true);
+      getBtn.disabled = false;
+      getBtn.classList.remove('btn-loading');
+      m3uCachedSourceUrl = url;
+      updateGetBtn();
+      toast('✓ ' + msg.count.toLocaleString() + ' channels loaded', 'ok');
+    } else if (msg.type === 'error') {
+      sse.close();
+      progressWrap.style.display = 'none';
+      showM3UError(msg.message);
+      getBtn.disabled = false;
+      getBtn.classList.remove('btn-loading');
+      if (wasReady) { m3uReady = true; setSearchEnabled(true); }
+    }
+  };
+
+  sse.onerror = () => {
+    sse.close();
+    progressWrap.style.display = 'none';
+    showM3UError('Connection lost. Check that the server is running.');
+    getBtn.disabled = false;
+    getBtn.classList.remove('btn-loading');
+    if (wasReady) { m3uReady = true; setSearchEnabled(true); }
+  };
+}
+
+// Get / Refresh button
+document.getElementById('m3u-get-btn').addEventListener('click', () => {
+  const url = document.getElementById('m3u-url').value.trim();
+  if (!url) { toast('Enter an M3U/Xtream URL first', 'error'); return; }
+  startM3UDownload(url, document.getElementById('m3u-get-btn'));
+});
+
+// Update button label as user types in the URL field
+document.getElementById('m3u-url').addEventListener('input', updateGetBtn);
+
+document.getElementById('m3u-refresh-toggle').addEventListener('click', async () => {
+  m3uRefreshEnabled = !m3uRefreshEnabled;
+  updateM3URefreshToggle();
+  await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
+  toast(m3uRefreshEnabled ? 'M3U auto-refresh enabled' : 'M3U auto-refresh disabled');
+});
+
+let refreshTimeTimer = null;
+document.getElementById('m3u-refresh-time').addEventListener('input', () => {
+  clearTimeout(refreshTimeTimer);
+  refreshTimeTimer = setTimeout(async () => {
+    await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
+    toast('Refresh time saved');
+  }, 2000);
+});
+
+// Search
+// Live search
+function debounce(fn, ms) {
+  let t;
+  const d = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  d.cancel = () => clearTimeout(t);
+  return d;
+}
+
+const doSearch = debounce(async () => {
+  const query = document.getElementById('m3u-search').value.trim();
+  if (query.length < 2) {
+    document.getElementById('m3u-results-wrap').style.display = 'none';
+    document.getElementById('m3u-search-help').textContent = '';
+    return;
+  }
+  if (!m3uReady) return;
+  try {
+    const r = await POST('/api/m3u/search', { query });
+    renderChannels(r.channels, r.count, r.total);
+  } catch(e) { toast('Search error: ' + e.message, 'error'); }
+}, 200);
+
+document.getElementById('m3u-search').addEventListener('input', () => {
+  const val = document.getElementById('m3u-search').value;
+  if (val.length < 2) {
+    doSearch.cancel();
+    document.getElementById('m3u-results-wrap').style.display = 'none';
+    document.getElementById('m3u-search-help').textContent = '';
+    return;
+  }
+  doSearch();
+});
+
+function renderChannels(channels, count, total) {
+  const card = document.getElementById('m3u-results-wrap');
+  const list = document.getElementById('channel-list');
+  list.scrollTop = 0; // reset scroll to top on new results
+  card.style.display = '';
+  const helpEl = document.getElementById('m3u-search-help');
+  helpEl.textContent = total !== undefined && count !== total
+    ? `Showing ${channels.length.toLocaleString()} of ${count.toLocaleString()} matches (${total.toLocaleString()} total)`
+    : `${channels.length.toLocaleString()} channels`;
+  list.innerHTML = '';
+  if (!channels.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">▶</div><p>No channels found.</p></div>';
+    return;
+  }
+  channels.forEach(ch => {
+    const div = document.createElement('div');
+    div.className = 'media-row';
+    const { channel: chChannel, title: chTitle } = parseName(ch.name);
+    div.innerHTML = `
+      ${logoImg(ch.logo)}
+      <div class="item-info">
+        <div class="item-name">${esc(chTitle || ch.name)}</div>
+        <div class="item-url">${esc(ch.url)}</div>
+        ${chChannel ? `<div class="item-meta">${channelTag(chChannel)}</div>` : ''}
+      </div>
+      <div class="sched-actions">
+        <button class="btn btn-primary btn-sm" type="button">Schedule</button>
+      </div>`;
+    div.querySelector('.btn-primary').addEventListener('click', () => openAddModal(ch));
+    list.appendChild(div);
+  });
+}
+
+function logoError(img) {
+  img.style.display = 'none';
+  img.nextElementSibling.classList.remove('hidden');
+}
+function logoImg(logo) {
+  if (logo) return `<img class="item-logo" src="/api/proxy-image?url=${encodeURIComponent(logo)}" loading="lazy" decoding="async" onerror="logoError(this)" alt=""/>` +
+    `<div class="item-logo-placeholder hidden">📺</div>`;
+  return `<div class="item-logo-placeholder">📺</div>`;
+}
+
+function parseName(name) {
+  if (!name) return { channel: null, title: '' };
+  const idx = name.indexOf(' | ');
+  if (idx === -1) return { channel: null, title: name.trim() };
+  const firstSegment = name.slice(0, idx).trim();
+  if (firstSegment.length > 30) return { channel: null, title: name.trim() };
+  return { channel: firstSegment, title: name.slice(idx + 3).trim() };
+}
+
+function channelTag(channel) {
+  if (!channel) return '';
+  return `<span class="item-tag tag-channel">${esc(channel)}</span>`;
+}
+
+/* ═══════════════════════════════════════════
+   Add-to-Schedule Modal
+═══════════════════════════════════════════ */
+function openAddModal(ch) {
+  document.getElementById('am-name').value   = ch.name;
+  document.getElementById('am-url').value    = ch.url;
+
+  // Use eventTime extracted by the server from tvg-name before stripping it from display name
+  if (ch.eventTime) {
+    const dt = new Date(ch.eventTime);
+    dt.setMinutes(dt.getMinutes() + 10);
+    document.getElementById('am-type').value  = 'once';
+    document.getElementById('am-runat').value = localDateTimeValue(dt);
+    toggleTypeFields('am', 'once');
+  } else {
+    document.getElementById('am-type').value  = 'now';
+    document.getElementById('am-runat').value = localDateTimeValue();
+    toggleTypeFields('am', 'now');
+  }
+  document.getElementById('am-cron').value   = '';
+  showModal('add-modal');
+}
+document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
+document.getElementById('add-modal-cancel').addEventListener('click', () => hideModal('add-modal'));
+document.getElementById('add-modal-save').addEventListener('click', async () => {
+  const amType = document.getElementById('am-type').value;
+  const url    = document.getElementById('am-url').value.trim();
+
+  if (amType === 'now') {
+    const name = document.getElementById('am-name').value || 'Untitled';
+    const logo = (nowPlayingData?.url === url) ? nowPlayingData.logo : null;
+    nowPlayingData = { name, url, logo, startedAt: new Date().toISOString() };
+    obsStreaming = true;
+    updateNowPlaying(true, nowPlayingData);
+    await POST('/api/play-now', { name, url });
+    toast('▶ Playing now!');
+    hideModal('add-modal');
+    await loadHistory();
+      return;
+  }
+
+  const body = {
+    name:         document.getElementById('am-name').value || 'Untitled',
+    url,
+    scheduleType: amType,
+    runAt:        document.getElementById('am-runat').value || null,
+    cronExpr:     document.getElementById('am-cron').value.trim() || null,
+  };
+  await POST('/api/schedules', body);
+  toast('Added to schedules!');
+  hideModal('add-modal');
+  loadSchedules();
+});
+
+/* ═══════════════════════════════════════════
+   Settings
+═══════════════════════════════════════════ */
+document.getElementById('save-pw-btn').addEventListener('click', async () => {
+  const pw      = document.getElementById('set-pw-new').value;
+  const confirm = document.getElementById('set-pw-confirm').value;
+  const result  = document.getElementById('pw-result');
+  const showPwMsg = (msg, ok) => {
+    result.innerHTML = `<span class="pw-result" style="color:${ok?'var(--accent)':'var(--danger)'}">
+      ${ok ? '✓' : '✗'} ${msg}</span>`;
+  };
+  if (!pw)            return showPwMsg('Enter a new password.', false);
+  if (pw.length < 6)  return showPwMsg('Password must be at least 6 characters.', false);
+  if (pw !== confirm) return showPwMsg('Passwords do not match.', false);
+  const btn = document.getElementById('save-pw-btn');
+  btn.disabled = true;
+  try {
+    const r = await POST('/api/auth/change-password', { password: pw });
+    if (r.ok) {
+      showPwMsg('Password changed successfully.', true);
+      document.getElementById('set-pw-new').value     = '';
+      document.getElementById('set-pw-confirm').value = '';
+    } else {
+      showPwMsg(r.error || 'Failed to change password.', false);
+    }
+  } catch(e) { showPwMsg(e.message, false); }
+  btn.disabled  = false;
+});
+
+/* ═══════════════════════════════════════════
+   Modal helpers
+═══════════════════════════════════════════ */
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function hideModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
+});
+
+/* ═══════════════════════════════════════════
+   Auth
+═══════════════════════════════════════════ */
+
+// ── Now Playing ──────────────────────────────────────────────────────────────
+let obsStreaming = false;
+let nowPlayingData = null;
+
+function updateNowPlaying(streaming, np) {
+  obsStreaming    = streaming;
+  nowPlayingData  = np;
+
+  // Update stream toggle button
+  const streamBtn = document.getElementById('stream-toggle-btn');
+  if (obsStreaming) {
+    streamBtn.textContent = 'Stop';
+    streamBtn.className   = 'btn btn-danger';
+  } else {
+    streamBtn.textContent = 'Stream';
+    streamBtn.className   = 'btn btn-primary';
+  }
+
+  // Update preview toggle button — disabled when not streaming
+  const previewBtn = document.getElementById('preview-toggle-btn');
+  previewBtn.disabled = !streaming;
+  previewBtn.className = previewVisible && streaming ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+
+  // Update now playing info — only show when streaming
+  const info = document.getElementById('now-playing-info');
+  if (streaming && np && np.name) {
+    const time = fmtDt(np.startedAt);
+    const { channel: npChannel, title: npTitle } = parseName(np.name);
+    info.innerHTML =
+      logoImg(np.logo) +
+      `<div class="item-info">
+        <div class="item-name">${esc(npTitle || np.name)}</div>
+        ${np.url ? `<div class="item-url">${esc(np.url)}</div>` : ''}
+        <div class="item-meta">
+          <span class="item-tag tag-muted">${time}</span>
+          ${channelTag(npChannel)}
+        </div>
+      </div>`;
+  } else {
+    info.innerHTML = '<span class="no-stream-active">// no stream active</span>';
+  }
+}
+
+// Stream toggle button
+document.getElementById('stream-toggle-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('stream-toggle-btn');
+  btn.disabled = true;
+  try {
+    if (obsStreaming) {
+      await POST('/api/obs/stream/stop');
+      obsStreaming = false;
+      updateNowPlaying(obsStreaming, nowPlayingData);
+      await loadHistory();
+      if (previewVisible) {
+        previewVisible = false;
+        document.getElementById('preview-toggle-btn').className = 'btn btn-secondary btn-sm';
+        document.getElementById('preview-wrap').style.display = 'none';
+        stopPreview();
+      }
+      toast('Streaming stopped', 'warn');
+    } else {
+      await POST('/api/obs/stream/start');
+      obsStreaming = true;
+      updateNowPlaying(true, nowPlayingData);
+      GET('/api/obs/status').then(r => updateNowPlaying(true, r.nowPlaying)).catch(() => {});
+      toast('Streaming started!', 'ok');
+    }
+  } catch(e) {
+    toast('OBS error: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+});
+
+// Poll OBS status every 500ms until streaming starts (max 15s)
+// Only used after schedule fires — not after manual button click
+// Load initial OBS status
+GET('/api/obs/status').then(r => updateNowPlaying(r.streaming, r.nowPlaying)).catch(() => {});
+
+document.getElementById('restartBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('restartBtn');
+  btn.disabled = true;
+  btn.textContent = '↺  Restarting…';
+  try {
+    await POST('/api/system/restart');
+    toast('Service is restarting…', 'warn');
+  } catch(e) {
+    toast('Restart failed: ' + e.message, 'error');
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = '↺  Restart Service'; }, 5000);
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await POST('/api/auth/logout');
+  location.href = '/login';
+});
+
+/* ═══════════════════════════════════════════
+   Helpers
+═══════════════════════════════════════════ */
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function localDateTimeValue(d) {
+  const dt = d || new Date();
+  if (!d) dt.setSeconds(0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  return dt.getFullYear() + '-' + pad(dt.getMonth()+1) + '-' + pad(dt.getDate()) +
+         'T' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+}
+function fmtDt(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+
+/* ═══════════════════════════════════════════
+   Init
+═══════════════════════════════════════════ */
+(async () => {
+  await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo()]);
+  // Restore last visited page from URL hash, default to dashboard
+  const savedPage = location.hash.replace('#', '');
+  navTo(savedPage || 'dashboard');
+  connectDashboardSSE();
+  connectAutoSchedSSE();
+})();
+
+
+// ── Auto-Scheduler ────────────────────────────────────────────────────────────
+let asData = {};
+let asEnabled = false;
+
+function renderAsLog() {
+  const log = document.getElementById('as-log');
+  if (!asData.activityLog || asData.activityLog.length === 0) {
+    log.innerHTML = '<div class="empty" style="padding:20px"><p>No activity yet.</p></div>';
+    return;
+  }
+  log.innerHTML = '<div class="item-list">' + asData.activityLog.map(e => {
+    const icons = { success: '✅', info: 'ℹ️', warn: '⚠️', error: '❌' };
+    const icon = icons[e.type] || 'ℹ️';
+    return `<div class="media-row">
+      <div class="item-info">
+        <div class="item-name">${icon} ${esc(e.message)}</div>
+        <div class="item-meta"><span class="item-tag tag-muted">${fmtDt(e.timestamp)}</span></div>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function updateAsToggle() {
+  const toggle      = document.getElementById('as-toggle');
+  const knob        = document.getElementById('as-knob');
+  const refreshRow  = document.getElementById('as-refresh-row');
+  const fields      = ['as-search', 'as-time', 'as-endpoint'];
+  const buttons     = ['as-run-btn'];
+  if (asEnabled) {
+    toggle.style.background = 'var(--accent)';
+    knob.style.left = '18px';
+    fields.forEach(id => { const el = document.getElementById(id); el.disabled = false; el.style.opacity = ''; });
+    buttons.forEach(id => { const el = document.getElementById(id); el.disabled = false; el.style.opacity = ''; });
+    refreshRow.style.opacity = '';
+    refreshRow.style.pointerEvents = '';
+  } else {
+    toggle.style.background = 'var(--border2)';
+    knob.style.left = '2px';
+    fields.forEach(id => { const el = document.getElementById(id); el.disabled = true; el.style.opacity = '0.4'; });
+    buttons.forEach(id => { const el = document.getElementById(id); el.disabled = true; el.style.opacity = '0.4'; });
+    refreshRow.style.opacity = '0.4';
+    refreshRow.style.pointerEvents = 'none';
+  }
+}
+
+// ── SSE connections ───────────────────────────────────────────────────────────
+function makeSSE(url, onMessage) {
+  let sse = null;
+  function connect() {
+    if (sse) return;
+    sse = new EventSource(url);
+    sse.onmessage = e => {
+      if (!e.data || e.data.trim() === '') return; // ignore heartbeat
+      onMessage(JSON.parse(e.data));
+    };
+    sse.onerror = () => { sse.close(); sse = null; setTimeout(connect, 3000); };
+  }
+  return connect;
+}
+
+const connectDashboardSSE = makeSSE('/api/events', ({ type, nowPlaying }) => {
+  if (type === 'history')    loadHistory();
+  if (type === 'schedule')   loadSchedules();
+  if (type === 'nowplaying') { obsStreaming = true; if (nowPlaying) nowPlayingData = nowPlaying; updateNowPlaying(true, nowPlayingData); loadHistory(); }
+});
+
+const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
+  asData.activityLog = asData.activityLog || [];
+  asData.activityLog.unshift(entry);
+  if (asData.activityLog.length > 10) asData.activityLog.length = 10;
+  renderAsLog();
+});
+
+function updateAsRefreshToggle() {
+  const toggle = document.getElementById('as-refresh-toggle');
+  const knob   = document.getElementById('as-refresh-knob');
+  const on     = asData.refreshBeforeRun || false;
+  toggle.style.background = on ? 'var(--accent)' : '';
+  knob.style.left         = on ? '18px' : '2px';
+}
+
+async function loadAutoScheduler() {
+  asData    = await GET('/api/auto-scheduler');
+  asEnabled = asData.enabled || false;
+  document.getElementById('as-search').value   = asData.searchString || '';
+  document.getElementById('as-time').value     = asData.checkTime || '';
+  document.getElementById('as-endpoint').value = asData.apiEndpoint || '';
+  updateAsToggle();
+  updateAsRefreshToggle();
+  renderAsLog();
+  connectAutoSchedSSE();
+}
+
+document.getElementById('as-toggle').addEventListener('click', async () => {
+  asEnabled = !asEnabled;
+  updateAsToggle();
+  if (asEnabled) {
+    await POST('/api/auto-scheduler/enable');
+    toast('Auto-Scheduler enabled');
+  } else {
+    await POST('/api/auto-scheduler/disable');
+    toast('Auto-Scheduler disabled');
+  }
+});
+
+document.getElementById('as-refresh-toggle').addEventListener('click', () => {
+  asData.refreshBeforeRun = !asData.refreshBeforeRun;
+  updateAsRefreshToggle();
+  scheduleAsSave();
+});
+
+let asSaveTimer = null;
+function scheduleAsSave() {
+  clearTimeout(asSaveTimer);
+  asSaveTimer = setTimeout(async () => {
+    await PUT('/api/auto-scheduler', {
+      searchString:     document.getElementById('as-search').value.trim(),
+      checkTime:        document.getElementById('as-time').value,
+      apiEndpoint:      document.getElementById('as-endpoint').value.trim(),
+      refreshBeforeRun: asData.refreshBeforeRun || false,
+    });
+    toast('Auto-Scheduler saved');
+  }, 2000);
+}
+['as-search', 'as-time', 'as-endpoint'].forEach(id => {
+  document.getElementById(id).addEventListener('input', scheduleAsSave);
+});
+
+document.getElementById('as-run-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('as-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  await POST('/api/auto-scheduler/run');
+  toast('Auto-Scheduler triggered!');
+  btn.disabled = false;
+  btn.textContent = '▶ Run Now';
+});
+
+
+
+// Schedules and history are updated via SSE — no polling needed
+
+
+</script>
+<script>
+// ── Preview Toggle ────────────────────────────────────────────────────────────
+let previewVisible = false;
+
+document.getElementById('preview-toggle-btn').addEventListener('click', () => {
+  previewVisible = !previewVisible;
+  const btn  = document.getElementById('preview-toggle-btn');
+  const wrap = document.getElementById('preview-wrap');
+  btn.className = previewVisible ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  if (previewVisible) {
+    wrap.style.display = '';
+    startPreview();
+  } else {
+    wrap.style.display = 'none';
+    stopPreview();
+  }
+});
+
+// ── Stream Preview (WebSocket fMP4 → MSE) ────────────────────────────────────
+let previewWs     = null;
+let mseSource     = null;
+let mseBuffer     = null;
+let mseQueue      = [];
+let mseObjectUrl  = null;
+let mseReady      = false;
+let playerStarted = false;
+
+function flushMSEQueue() {
+  if (!mseReady || !mseBuffer || mseBuffer.updating || mseQueue.length === 0) return;
+  if (!mseSource || mseSource.readyState !== 'open') return;
+  try { mseBuffer.appendBuffer(mseQueue.shift()); }
+  catch(e) { console.warn('[MSE] appendBuffer:', e.message); mseQueue = []; }
+}
+
+function startMSEPlayer() {
+  if (playerStarted) return; // prevent multiple instances
+  playerStarted = true;
+
+  const video = document.getElementById('preview-video');
+  mseSource    = new MediaSource();
+  mseObjectUrl = URL.createObjectURL(mseSource);
+  video.src    = mseObjectUrl;
+
+  mseSource.addEventListener('sourceopen', () => {
+    if (mseBuffer) return; // already initialized
+    try {
+      mseBuffer = mseSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
+      mseBuffer.mode = 'sequence';
+      mseBuffer.addEventListener('updateend', flushMSEQueue);
+      mseReady = true;
+    } catch(e) {
+      console.error('[MSE] addSourceBuffer failed:', e.message);
+      return;
+    }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    previewWs = new WebSocket(`${proto}://${location.host}/ws/preview`);
+    previewWs.binaryType = 'arraybuffer';
+
+    previewWs.onopen  = () => previewWs.send('start');
+    previewWs.onerror = e => console.error('[WS] Error', e);
+    previewWs.onclose = e => console.warn('[WS] Closed code:', e.code);
+
+    previewWs.onmessage = e => {
+      if (!mseReady || !mseSource || mseSource.readyState !== 'open') return;
+      mseQueue.push(new Uint8Array(e.data));
+      flushMSEQueue();
+      if (video.paused && video.buffered.length > 0 && video.buffered.end(0) > 1) {
+        video.play().catch(() => {});
+      }
+    };
+  }, { once: true }); // only fire once!
+}
+
+function stopMSEPlayer() {
+  playerStarted = false;
+  mseReady      = false;
+  mseQueue      = [];
+  if (previewWs) { previewWs.onclose = null; previewWs.send('stop'); previewWs.close(); previewWs = null; }
+  mseBuffer = null;
+  mseSource = null;
+  if (mseObjectUrl) { URL.revokeObjectURL(mseObjectUrl); mseObjectUrl = null; }
+  const video = document.getElementById('preview-video');
+  video.pause();
+  video.removeAttribute('src');
+}
+
+function startPreview() {
+  startMSEPlayer(); // WS 'start' message triggers FFmpeg on server
+}
+
+function stopPreview() {
+  stopMSEPlayer(); // closes local WS — FFmpeg stops only if no other clients
+}
+
+
+</script>
+</body>
+</html>

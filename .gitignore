@@ -1,0 +1,8 @@
+# Dependencies
+node_modules/
+
+# User data and config (contains credentials, personal schedules, M3U cache)
+data/
+
+# Bundled binary (users place this manually per bin/README.txt)
+bin/ffmpeg.exe
