@@ -470,7 +470,7 @@ async function setOBSMediaSource(obs, url) {
 }
 
 async function launchPlayer(s) {
-  if (nowPlaying?.url === s.url) return;
+  if (nowPlaying?.url === s.url && !nowPlaying?.stopped) return;
   const entry = {
     id:           uuidv4(),
     scheduleId:   s.id,
@@ -905,6 +905,17 @@ wss.on('connection', ws => {
     console.log('[Preview] Client disconnected, total:', previewClients.size);
   });
 });
+
+// At startup, mark nowPlaying as stopped if OBS isn't actively streaming
+// This prevents the launchPlayer dedup check from blocking replays after a restart
+(async () => {
+  try {
+    const { outputActive } = await withOBS(obs => obs.call('GetStreamStatus'));
+    if (!outputActive && nowPlaying) { nowPlaying.stopped = true; saveNowPlaying(); }
+  } catch {
+    if (nowPlaying) { nowPlaying.stopped = true; saveNowPlaying(); }
+  }
+})();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n✓ Stream Scheduler running at http://0.0.0.0:${PORT}`);
