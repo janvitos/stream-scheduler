@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Claude Code project files (personal memory, local settings)
+.claude/
+
 # User data and config (contains credentials, personal schedules, M3U cache)
 data/
 
