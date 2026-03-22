@@ -7,8 +7,14 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Stream Scheduler — Login</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+    @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: block; }
+    @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: block; }
+    @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: block; }
+    @font-face { font-family: 'Inter'; src: url('/fonts/inter-latin-800-normal.woff2') format('woff2'); font-weight: 800; font-style: normal; font-display: block; }
+    body { visibility: hidden; }
+  </style>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -198,6 +204,7 @@
     };
     const showErr = (msg) => { err.textContent = msg; err.className = 'error show'; };
     document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); doLogin(); });
+    document.fonts.ready.then(() => { document.body.style.visibility = 'visible'; });
   </script>
 </body>
 </html>
