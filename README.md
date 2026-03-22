@@ -60,7 +60,7 @@ In OBS Studio:
 2. Enable the WebSocket server
 3. Set the port (default: `4455`)
 4. Set a password if desired (match it in StreamSched Settings)
-5. Add a source to your scene — either a **Media Source** named exactly `Media`, or a **VLC Video Source** named exactly `VLC Video`
+5. Add one or both sources to your scene — a **Media Source** named exactly `Media`, a **VLC Video Source** named exactly `VLC Video`, or both. StreamSched will automatically show the active source and hide the other when a stream plays
 6. In StreamSched **Settings → OBS Source**, select which source type you are using
 
 ### 4. Start the server
