@@ -493,28 +493,31 @@ async function launchPlayer(s) {
 
   const logEntry = () => {
     if (!s.noHistory) {
-      history.push(entry);
-      saveHistory(); // saveHistory() enforces MAX_HISTORY cap
+      const latest = history[history.length - 1];
+      if (!latest || latest.url !== s.url) {
+        history.push(entry);
+        saveHistory(); // saveHistory() enforces MAX_HISTORY cap
+      }
     }
     const idx = schedules.findIndex(x => x.id === s.id);
     if (idx !== -1) { schedules[idx].lastRun = entry.startedAt; saveSchedules(); }
   };
 
+  logEntry();
+
   try {
     await ensureOBSStreaming();
     await withOBS(obs => setOBSMediaSource(obs, s.url));
-    entry.status = 'launched';
-    nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
-    saveNowPlaying();
-    pushDashboardEvent('nowplaying', { nowPlaying });
+    // Only update nowPlaying if the stream wasn't stopped while OBS was starting up
+    if (!nowPlaying?.stopped) {
+      nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
+      saveNowPlaying();
+      pushDashboardEvent('nowplaying', { nowPlaying });
+    }
     console.log('[OBS] Source updated:', s.url);
   } catch (e) {
-    entry.status = 'error';
-    entry.error  = e.message;
     console.error('[OBS] Failed to update media source:', e.message);
   }
-
-  logEntry();
 }
 
 // Boot: re-register all enabled schedules

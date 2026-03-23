@@ -575,7 +575,7 @@
             <div class="card-title">🎥 Now Playing</div>
             <div class="np-header-actions">
               <button class="sched-btn" id="preview-toggle-btn" type="button" title="Show/Hide Preview">👁</button>
-              <button class="sched-btn sched-btn-run" id="stream-toggle-btn" type="button" title="Start stream">▶</button>
+              <button class="sched-btn" id="stream-toggle-btn" type="button" title="Stop stream" disabled>■</button>
             </div>
           </div>
           <!-- Stream info -->
@@ -1074,7 +1074,6 @@ function makeHistoryItem(h) {
       updateNowPlaying(true, nowPlayingData);
       await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
       toast('▶ Launching…');
-      await loadHistory();
       div.style.pointerEvents = '';
     });
   }
@@ -1470,17 +1469,10 @@ function updateNowPlaying(streaming, np) {
   obsStreaming    = streaming;
   nowPlayingData  = np;
 
-  // Update stream toggle button
+  // Update stream toggle button — always a stop button, red only when streaming
   const streamBtn = document.getElementById('stream-toggle-btn');
-  if (obsStreaming) {
-    streamBtn.textContent = '■';
-    streamBtn.className   = 'sched-btn sched-btn-stop';
-    streamBtn.title       = 'Stop stream';
-  } else {
-    streamBtn.textContent = '▶';
-    streamBtn.className   = 'sched-btn sched-btn-run';
-    streamBtn.title       = 'Start stream';
-  }
+  streamBtn.className = streaming ? 'sched-btn sched-btn-stop' : 'sched-btn';
+  streamBtn.disabled  = !streaming;
 
   // Update preview toggle button — disabled when not streaming
   const previewBtn = document.getElementById('preview-toggle-btn');
@@ -1512,29 +1504,21 @@ document.getElementById('stream-toggle-btn').addEventListener('click', async () 
   const btn = document.getElementById('stream-toggle-btn');
   btn.disabled = true;
   try {
-    if (obsStreaming) {
-      await POST('/api/obs/stream/stop');
-      obsStreaming = false;
-      updateNowPlaying(obsStreaming, nowPlayingData);
-      await loadHistory();
-      if (previewVisible) {
-        previewVisible = false;
-        document.getElementById('preview-toggle-btn').className = 'sched-btn';
-        document.getElementById('preview-wrap').style.display = 'none';
-        stopPreview();
-      }
-      toast('Streaming stopped', 'warn');
-    } else {
-      await POST('/api/obs/stream/start');
-      obsStreaming = true;
-      updateNowPlaying(true, nowPlayingData);
-      GET('/api/obs/status').then(r => updateNowPlaying(true, r.nowPlaying)).catch(() => {});
-      toast('Streaming started!', 'ok');
+    await POST('/api/obs/stream/stop');
+    obsStreaming = false;
+    updateNowPlaying(false, nowPlayingData);
+    await loadHistory();
+    if (previewVisible) {
+      previewVisible = false;
+      document.getElementById('preview-toggle-btn').className = 'sched-btn';
+      document.getElementById('preview-wrap').style.display = 'none';
+      stopPreview();
     }
+    toast('Streaming stopped', 'warn');
   } catch(e) {
     toast('OBS error: ' + e.message, 'error');
+    btn.disabled = false;
   }
-  btn.disabled = false;
 });
 
 // Poll OBS status every 500ms until streaming starts (max 15s)
