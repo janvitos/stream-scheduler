@@ -711,8 +711,10 @@ function startM3URefreshCron() {
     try {
       const count = await refreshM3U();
       console.log(`[M3U] Daily refresh complete — ${count} channels.`);
+      logAutoActivity('info', `M3U auto-refreshed — ${count} channels loaded.`);
     } catch (e) {
       console.warn('[M3U] Daily refresh failed:', e.message);
+      logAutoActivity('error', `M3U auto-refresh failed: ${e.message}`);
     }
   });
   console.log(`[M3U] Auto-refresh cron set for ${settings.m3uRefreshTime} daily`);
