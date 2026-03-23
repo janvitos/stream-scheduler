@@ -161,7 +161,7 @@
     .btn-danger    { background: rgba(255,76,106,.15); color: var(--danger); border: 1px solid rgba(255,76,106,.25); }
     .btn-ghost     { background: transparent; color: var(--muted2); border: 1px solid var(--border); }
     .btn-sm        { height: 38px; padding: 0 12px; font-size: 12px; border-radius: 6px; }
-    .btn:disabled  { opacity: .35; cursor: not-allowed; }
+    .btn:disabled, .sched-btn:disabled { opacity: .35; cursor: not-allowed; }
     .btn-icon { width: 38px; height: 38px; padding: 0; justify-content: center; }
 
     /* ── Cards ── */
@@ -306,7 +306,7 @@
       font-size: 13px; cursor: pointer;
       transition: background .15s, color .15s, border-color .15s;
     }
-    .sched-btn:hover { background: var(--border2); color: var(--accent); border-color: var(--accent); }
+    .sched-btn:not(:disabled):hover { background: var(--border2); color: var(--accent); border-color: var(--accent); }
     .sched-btn-run:hover    { color: var(--accent); border-color: var(--accent); }
     .sched-btn-edit:hover   { color: var(--accent2); border-color: var(--accent2); }
     .sched-btn-delete:hover { color: var(--danger); border-color: var(--danger); }
@@ -315,6 +315,8 @@
 
     /* ── M3U search ── */
     .channel-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+    .ch-card { cursor: pointer; transition: background .15s, border-color .15s; }
+    .ch-card:hover { background: rgba(37,44,54,0.5); border-color: var(--accent); }
     .item-logo { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
     .item-logo-placeholder { width: 32px; height: 32px; border-radius: 6px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
     .item-logo-placeholder.hidden { display: none; }
@@ -498,8 +500,11 @@
     .np-activity-header { margin-top: 16px; }
     .no-stream-active { font-size:12px; color:var(--muted); }
     .tag-muted { background:rgba(90,96,112,.1); color:var(--muted); }
-    #stream-toggle-btn { min-width:90px; justify-content:center; }
-    #preview-toggle-btn { transition: background .15s, color .15s, border-color .15s; }
+    .sched-btn-stop                        { color: var(--danger); border-color: var(--danger); }
+    .sched-btn-stop:not(:disabled):hover   { background: var(--border2); color: var(--danger); border-color: var(--danger); }
+    .sched-btn-active                      { color: var(--accent); border-color: var(--accent); }
+    .sched-btn-active:not(:disabled):hover { background: var(--border2); color: var(--accent); border-color: var(--accent); }
+
     .np-header-actions { display:flex; align-items:center; gap:8px; }
     .pw-result { font-size:12px; }
   </style>
@@ -569,8 +574,8 @@
           <div class="card-header np-header">
             <div class="card-title">🎥 Now Playing</div>
             <div class="np-header-actions">
-              <button class="btn btn-secondary btn-sm" id="preview-toggle-btn" type="button" title="Show/Hide Preview">👁</button>
-              <button class="btn btn-primary" id="stream-toggle-btn" type="button">Stream</button>
+              <button class="sched-btn" id="preview-toggle-btn" type="button" title="Show/Hide Preview">👁</button>
+              <button class="sched-btn sched-btn-run" id="stream-toggle-btn" type="button" title="Start stream">▶</button>
             </div>
           </div>
           <!-- Stream info -->
@@ -1049,7 +1054,7 @@ async function loadHistory() {
 
 function makeHistoryItem(h) {
   const div = document.createElement('div');
-  div.className = 'media-row';
+  div.className = h.url ? 'media-row ch-card' : 'media-row';
   const { channel: hChannel, title: hTitle } = parseName(h.scheduleName);
   div.innerHTML = `
     ${logoImg(h.logo)}
@@ -1060,19 +1065,17 @@ function makeHistoryItem(h) {
         <span class="item-tag tag-muted">${fmtDt(h.startedAt)}</span>
         ${channelTag(hChannel)}
       </div>
-    </div>
-    ${h.url ? `<button class="sched-btn sched-btn-run hist-run-btn" title="Run again">▶</button>` : ''}`;
+    </div>`;
   if (h.url) {
-    div.querySelector('.hist-run-btn').addEventListener('click', async () => {
-      const btn = div.querySelector('.hist-run-btn');
-      btn.disabled = true;
+    div.addEventListener('click', async () => {
+      div.style.pointerEvents = 'none';
       nowPlayingData = { name: h.scheduleName, url: h.url, logo: h.logo || null, startedAt: new Date().toISOString() };
       obsStreaming = true;
       updateNowPlaying(true, nowPlayingData);
       await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
       toast('▶ Launching…');
       await loadHistory();
-      btn.disabled = false;
+      div.style.pointerEvents = '';
     });
   }
   return div;
@@ -1335,7 +1338,7 @@ function renderChannels(channels, count, total) {
   }
   channels.forEach(ch => {
     const div = document.createElement('div');
-    div.className = 'media-row';
+    div.className = 'media-row ch-card';
     const { channel: chChannel, title: chTitle } = parseName(ch.name);
     div.innerHTML = `
       ${logoImg(ch.logo)}
@@ -1343,11 +1346,8 @@ function renderChannels(channels, count, total) {
         <div class="item-name">${esc(chTitle || ch.name)}</div>
         <div class="item-url">${esc(ch.url)}</div>
         ${chChannel ? `<div class="item-meta">${channelTag(chChannel)}</div>` : ''}
-      </div>
-      <div class="sched-actions">
-        <button class="btn btn-primary btn-sm" type="button">Schedule</button>
       </div>`;
-    div.querySelector('.btn-primary').addEventListener('click', () => openAddModal(ch));
+    div.addEventListener('click', () => openAddModal(ch));
     list.appendChild(div);
   });
 }
@@ -1473,17 +1473,19 @@ function updateNowPlaying(streaming, np) {
   // Update stream toggle button
   const streamBtn = document.getElementById('stream-toggle-btn');
   if (obsStreaming) {
-    streamBtn.textContent = 'Stop';
-    streamBtn.className   = 'btn btn-danger';
+    streamBtn.textContent = '■';
+    streamBtn.className   = 'sched-btn sched-btn-stop';
+    streamBtn.title       = 'Stop stream';
   } else {
-    streamBtn.textContent = 'Stream';
-    streamBtn.className   = 'btn btn-primary';
+    streamBtn.textContent = '▶';
+    streamBtn.className   = 'sched-btn sched-btn-run';
+    streamBtn.title       = 'Start stream';
   }
 
   // Update preview toggle button — disabled when not streaming
   const previewBtn = document.getElementById('preview-toggle-btn');
   previewBtn.disabled = !streaming;
-  previewBtn.className = previewVisible && streaming ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  previewBtn.className = previewVisible && streaming ? 'sched-btn sched-btn-active' : 'sched-btn';
 
   // Update now playing info — only show when streaming
   const info = document.getElementById('now-playing-info');
@@ -1517,7 +1519,7 @@ document.getElementById('stream-toggle-btn').addEventListener('click', async () 
       await loadHistory();
       if (previewVisible) {
         previewVisible = false;
-        document.getElementById('preview-toggle-btn').className = 'btn btn-secondary btn-sm';
+        document.getElementById('preview-toggle-btn').className = 'sched-btn';
         document.getElementById('preview-wrap').style.display = 'none';
         stopPreview();
       }
@@ -1724,7 +1726,7 @@ document.getElementById('preview-toggle-btn').addEventListener('click', () => {
   previewVisible = !previewVisible;
   const btn  = document.getElementById('preview-toggle-btn');
   const wrap = document.getElementById('preview-wrap');
-  btn.className = previewVisible ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  btn.className = previewVisible ? 'sched-btn sched-btn-active' : 'sched-btn';
   if (previewVisible) {
     wrap.style.display = '';
     startPreview();
