@@ -663,6 +663,11 @@
             <span class="setting-text">VLC Video</span>
           </div>
           <div class="help mt-8">The source must be named <strong>Media</strong> or <strong>VLC Video</strong> in OBS.</div>
+          <div class="field mt-16">
+            <label class="lbl">RTMP Preview URL</label>
+            <input type="text" id="rtmp-url" placeholder="e.g. rtmp://127.0.0.1/live/stream"/>
+            <div class="help mt-4">The RTMP URL StreamSched will read from for the live preview.</div>
+          </div>
         </div>
 
         <div class="card">
@@ -1171,6 +1176,7 @@ async function loadCacheInfo() {
     document.getElementById('m3u-refresh-time').value = settingsRes.m3uRefreshTime || '06:00';
     updateM3URefreshToggle();
     setToggleState('obs-source-toggle', (settingsRes.obsSourceType || 'media') === 'vlc');
+    document.getElementById('rtmp-url').value = settingsRes.rtmpUrl || '';
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1286,6 +1292,15 @@ document.getElementById('obs-source-toggle').addEventListener('click', async () 
   setToggleState('obs-source-toggle', isVLC);
   await PUT('/api/settings', { obsSourceType: isVLC ? 'vlc' : 'media' });
   toast(isVLC ? 'OBS source set to VLC Video' : 'OBS source set to Media');
+});
+
+const saveRtmpUrl = debounce(async () => {
+  await PUT('/api/settings', { rtmpUrl: document.getElementById('rtmp-url').value.trim() });
+  toast('RTMP URL saved');
+}, 1500);
+document.getElementById('rtmp-url').addEventListener('input', () => {
+  saveRtmpUrl();
+  updateNowPlaying(obsStreaming, nowPlayingData);
 });
 
 // Search
@@ -1475,10 +1490,11 @@ function updateNowPlaying(streaming, np) {
   streamBtn.className = streaming ? 'sched-btn sched-btn-stop' : 'sched-btn';
   streamBtn.disabled  = !streaming;
 
-  // Update preview toggle button — disabled when not streaming
+  // Update preview toggle button — disabled when not streaming or no RTMP URL configured
   const previewBtn = document.getElementById('preview-toggle-btn');
-  previewBtn.disabled = !streaming;
-  previewBtn.className = previewVisible && streaming ? 'sched-btn sched-btn-active' : 'sched-btn';
+  const hasRtmp = !!document.getElementById('rtmp-url').value.trim();
+  previewBtn.disabled = !streaming || !hasRtmp;
+  previewBtn.className = previewVisible && streaming && hasRtmp ? 'sched-btn sched-btn-active' : 'sched-btn';
 
   // Update now playing info — only show when streaming
   const info = document.getElementById('now-playing-info');

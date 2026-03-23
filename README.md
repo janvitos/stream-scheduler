@@ -62,6 +62,7 @@ In OBS Studio:
 4. Set a password if desired (match it in StreamSched Settings)
 5. Add one or both sources to your scene — a **Media Source** named exactly `Media`, a **VLC Video Source** named exactly `VLC Video`, or both. StreamSched will automatically show the active source and hide the other when a stream plays
 6. In StreamSched **Settings → OBS Source**, select which source type you are using
+7. If you want to use the live preview, set the **RTMP Preview URL** in **Settings → OBS Source** to the RTMP URL OBS is receiving (e.g. `rtmp://127.0.0.1/live/stream`)
 
 ### 4. Start the server
 
@@ -168,7 +169,7 @@ All data is stored in the `data/` directory:
 | `schedules.json`     | All saved schedules                             |
 | `history.json`       | Playback log (last 10 entries)                  |
 | `now_playing.json`   | Currently playing stream (persisted on restart) |
-| `settings.json`      | OBS connection, M3U refresh settings            |
+| `settings.json`      | OBS connection, M3U refresh, RTMP preview URL   |
 | `auto_scheduler.json`| Auto-scheduler config and activity log          |
 | `m3u_cache.json`     | Cached channel list from last M3U fetch         |
 

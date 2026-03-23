@@ -854,16 +854,15 @@ app.post('/api/obs/stream/stop', async (req, res) => {
 
 
 // ── Stream Preview (WebSocket — per-client FFmpeg) ────────────────────────────
-const RTMP_INPUT = 'rtmp://localhost/live/stream';
 const FFMPEG  = path.join(__dirname, 'bin', 'ffmpeg.exe');
-
-
 
 let   previewClients = new Set();
 
 function spawnFFmpegForClient(ws) {
+  const rtmpUrl = settings.rtmpUrl;
+  if (!rtmpUrl) { ws.close(1008, 'No RTMP URL configured'); return null; }
   const args = [
-    '-i', RTMP_INPUT,
+    '-i', rtmpUrl,
     '-c:v', 'copy',
     '-c:a', 'aac', '-b:a', '128k',
     '-f', 'mp4',
