@@ -663,7 +663,13 @@
             <span class="setting-text">VLC Video</span>
           </div>
           <div class="help mt-8">The source must be named <strong>Media</strong> or <strong>VLC Video</strong> in OBS.</div>
-          <div class="field mt-16">
+          <div class="flex gap-8 mt-16 align-center">
+            <span class="setting-text">Auto-detect RTMP from OBS</span>
+            <div id="rtmp-autodetect-toggle" class="toggle-switch">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+          <div class="field mt-12">
             <label class="lbl">RTMP Preview URL</label>
             <input type="text" id="rtmp-url" placeholder="e.g. rtmp://127.0.0.1/live/stream"/>
             <div class="help mt-4">The RTMP URL StreamSched will read from for the live preview.</div>
@@ -1176,7 +1182,20 @@ async function loadCacheInfo() {
     document.getElementById('m3u-refresh-time').value = settingsRes.m3uRefreshTime || '06:00';
     updateM3URefreshToggle();
     setToggleState('obs-source-toggle', (settingsRes.obsSourceType || 'media') === 'vlc');
+    const rtmpAutoDetect = settingsRes.rtmpAutoDetect !== false;
+    setToggleState('rtmp-autodetect-toggle', rtmpAutoDetect);
+    document.getElementById('rtmp-url').disabled = rtmpAutoDetect;
     document.getElementById('rtmp-url').value = settingsRes.rtmpUrl || '';
+    if (rtmpAutoDetect && !settingsRes.rtmpUrl) {
+      try {
+        const { url } = await GET('/api/obs/rtmp-url');
+        if (url) {
+          document.getElementById('rtmp-url').value = url;
+          await PUT('/api/settings', { rtmpUrl: url });
+          updateNowPlaying(obsStreaming, nowPlayingData);
+        }
+      } catch {}
+    }
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1292,6 +1311,14 @@ document.getElementById('obs-source-toggle').addEventListener('click', async () 
   setToggleState('obs-source-toggle', isVLC);
   await PUT('/api/settings', { obsSourceType: isVLC ? 'vlc' : 'media' });
   toast(isVLC ? 'OBS source set to VLC Video' : 'OBS source set to Media');
+});
+
+document.getElementById('rtmp-autodetect-toggle').addEventListener('click', async () => {
+  const enabled = !document.getElementById('rtmp-autodetect-toggle').classList.contains('toggle-on');
+  setToggleState('rtmp-autodetect-toggle', enabled);
+  document.getElementById('rtmp-url').disabled = enabled;
+  await PUT('/api/settings', { rtmpAutoDetect: enabled });
+  toast(enabled ? 'RTMP auto-detect enabled' : 'RTMP auto-detect disabled');
 });
 
 const saveRtmpUrl = debounce(async () => {

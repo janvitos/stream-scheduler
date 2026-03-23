@@ -786,6 +786,20 @@ async function withOBS(fn) {
   try { return await fn(obs); } finally { obs.disconnect(); }
 }
 
+app.get('/api/obs/rtmp-url', async (req, res) => {
+  try {
+    const url = await withOBS(async obs => {
+      const { streamServiceSettings } = await obs.call('GetStreamServiceSettings');
+      const { server, key } = streamServiceSettings;
+      if (!server || !key) return null;
+      return `${server.replace(/\/$/, '')}/${key}`;
+    });
+    res.json({ url });
+  } catch (e) {
+    res.json({ url: null });
+  }
+});
+
 app.get('/api/obs/status', async (req, res) => {
   try {
     const { outputActive } = await withOBS(obs => obs.call('GetStreamStatus'));
