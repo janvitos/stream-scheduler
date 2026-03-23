@@ -62,7 +62,7 @@ In OBS Studio:
 4. Set a password if desired (match it in StreamSched Settings)
 5. Add one or both sources to your scene — a **Media Source** named exactly `Media`, a **VLC Video Source** named exactly `VLC Video`, or both. StreamSched will automatically show the active source and hide the other when a stream plays
 6. In StreamSched **Settings → OBS Source**, select which source type you are using
-7. If you want to use the live preview, set the **RTMP Preview URL** in **Settings → OBS Source** to the RTMP URL OBS is receiving (e.g. `rtmp://127.0.0.1/live/stream`)
+7. If you want to use the live preview, go to **Settings → OBS Source** — the **RTMP Preview URL** will be auto-detected from OBS by default. You can disable **Auto-detect RTMP from OBS** and enter the URL manually if needed (e.g. `rtmp://127.0.0.1/live/stream`)
 
 ### 4. Start the server
 
