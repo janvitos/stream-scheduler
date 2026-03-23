@@ -1133,6 +1133,7 @@ function updateGetBtn() {
   const btn = document.getElementById('m3u-get-btn');
   const inputUrl = document.getElementById('m3u-url').value.trim();
   btn.textContent = (m3uCachedSourceUrl && inputUrl === m3uCachedSourceUrl) ? 'Refresh' : 'Get';
+  btn.disabled = !inputUrl;
 }
 
 // #3/#6 — unified toggle state helper (uses CSS class instead of inline styles)
