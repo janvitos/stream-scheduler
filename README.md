@@ -85,13 +85,13 @@ http://192.168.1.x:3000
 1. Paste your M3U or Xtream Codes URL — supported formats:
    - Direct `.m3u` / `.m3u8` file URL
    - Xtream Codes: `http://server/get.php?username=X&password=Y&type=m3u_plus`
-2. Click **Get Channels** to fetch and cache the channel list
+2. Click **Get** to fetch and cache the channel list
 3. Optionally enable **Auto-refresh** to re-fetch daily at a time of your choosing
 
 ### Searching & Scheduling Channels (Dashboard)
 
 1. Type in the **Channel Search** box to filter your channel list
-2. Click **Schedule** on any result to open the scheduling modal:
+2. Click or tap any channel to open the scheduling modal:
    - **Now** — plays immediately in OBS
    - **Once** — pick a date and time
    - **Recurring** — enter a cron expression
@@ -138,8 +138,7 @@ Matched events are scheduled 10 minutes before their listed start time.
 ### Now Playing & Recent Activity (Dashboard)
 
 - **Now Playing** shows the currently active stream with channel logo, name, and start time
-- **Recent Activity** shows the last 5 streams played
-- Click **Run Again** on any history entry to replay it instantly
+- **Recent Activity** shows the last 10 streams played — click or tap any entry to replay it instantly
 
 ---
 
