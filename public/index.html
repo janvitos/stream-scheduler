@@ -120,9 +120,9 @@
       cursor: pointer;
       transition: background .15s, color .15s, border-color .15s;
     }
-    .sb-footer button:hover { background: var(--surface2); }
-    #logoutBtn:hover { color: var(--danger); border-color: var(--danger); }
-    #restartBtn:hover { color: var(--accent); border-color: var(--accent); }
+    #restartBtn { background: rgba(0,229,160,.08);  color: var(--accent); border-color: rgba(0,229,160,.2); }
+    #logoutBtn  { background: rgba(255,76,106,.08); color: var(--danger); border-color: rgba(255,76,106,.2); }
+    .sb-footer button:hover { opacity: .85; }
 
     /* ── Main ── */
     #main {
@@ -155,10 +155,8 @@
     }
     .btn:hover { opacity: .85; }
     .btn:active { transform: scale(.97); }
-    .btn-primary   { background: var(--accent);  color: #000; }
-    .btn-secondary { background: var(--surface2); color: var(--muted2); border: 1px solid var(--border2); }
-    .btn-secondary:not(:disabled):hover { color: var(--accent); border-color: var(--accent); }
-    .btn-danger    { background: rgba(255,76,106,.15); color: var(--danger); border: 1px solid rgba(255,76,106,.25); }
+    .btn-primary   { background: rgba(0,229,160,.12);  color: var(--accent); border-color: rgba(0,229,160,.25); }
+    .btn-danger    { background: rgba(255,76,106,.12); color: var(--danger); border-color: rgba(255,76,106,.25); }
     .btn-ghost     { background: transparent; color: var(--muted2); border: 1px solid var(--border); }
     .btn-sm        { height: 38px; padding: 0 12px; font-size: 12px; border-radius: 6px; }
     .btn:disabled, .sched-btn:disabled { opacity: .35; cursor: not-allowed; }
@@ -230,8 +228,8 @@
     /* ── Toggle switch ── */
     .toggle-switch { width: 36px; height: 20px; border-radius: 10px; background: var(--border2); position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
     .toggle-knob   { width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left .2s; }
-    .toggle-switch.toggle-on { background: var(--accent); }
-    #obs-source-toggle { background: var(--accent); }
+    .toggle-switch.toggle-on { background: rgba(0,229,160,.5); }
+    #obs-source-toggle { background: rgba(0,229,160,.5); }
     .toggle-switch.toggle-on .toggle-knob { left: 18px; }
 
     /* ── Status label ── */
@@ -301,15 +299,14 @@
     .sched-btn {
       width: 38px; height: 38px;
       display: inline-flex; align-items: center; justify-content: center;
-      border-radius: 6px; border: 1px solid var(--border);
-      background: var(--surface2); color: var(--muted2);
+      border-radius: 6px; border: 1px solid rgba(0,229,160,.25);
+      background: rgba(0,229,160,.12); color: var(--accent);
       font-size: 13px; cursor: pointer;
-      transition: background .15s, color .15s, border-color .15s;
+      transition: background .15s, color .15s, border-color .15s, opacity .15s;
     }
-    .sched-btn:not(:disabled):hover { background: var(--border2); color: var(--accent); border-color: var(--accent); }
-    .sched-btn-run:hover    { color: var(--accent); border-color: var(--accent); }
-    .sched-btn-edit:hover   { color: var(--accent2); border-color: var(--accent2); }
-    .sched-btn-delete:hover { color: var(--danger); border-color: var(--danger); }
+    .sched-btn:not(:disabled):hover { opacity: .85; }
+    .sched-btn-edit   { background: rgba(0,119,255,.12);  color: var(--accent2); border-color: rgba(0,119,255,.25); }
+    .sched-btn-delete { background: rgba(255,76,106,.12); color: var(--danger);  border-color: rgba(255,76,106,.25); }
     .sched-btn-toggle.enabled  { color: var(--accent); }
     .sched-btn-toggle.disabled { color: var(--muted); }
 
@@ -500,10 +497,8 @@
     .np-activity-header { margin-top: 16px; }
     .no-stream-active { font-size:12px; color:var(--muted); }
     .tag-muted { background:rgba(90,96,112,.1); color:var(--muted); }
-    .sched-btn-stop                        { color: var(--danger); border-color: var(--danger); }
-    .sched-btn-stop:not(:disabled):hover   { background: var(--border2); color: var(--danger); border-color: var(--danger); }
-    .sched-btn-active                      { color: var(--accent); border-color: var(--accent); }
-    .sched-btn-active:not(:disabled):hover { background: var(--border2); color: var(--accent); border-color: var(--accent); }
+    .sched-btn-stop   { background: rgba(255,76,106,.12); color: var(--danger);  border-color: rgba(255,76,106,.25); }
+    .sched-btn-active { background: rgba(0,229,160,.25); color: var(--accent);  border-color: rgba(0,229,160,.5); }
 
     .np-header-actions { display:flex; align-items:center; gap:8px; }
     .pw-result { font-size:12px; }
@@ -575,7 +570,7 @@
             <div class="card-title">🎥 Now Playing</div>
             <div class="np-header-actions">
               <button class="sched-btn" id="preview-toggle-btn" type="button" title="Show/Hide Preview">👁</button>
-              <button class="sched-btn" id="stream-toggle-btn" type="button" title="Stop stream" disabled>■</button>
+              <button class="sched-btn sched-btn-stop" id="stream-toggle-btn" type="button" title="Stop stream" disabled>■</button>
             </div>
           </div>
           <!-- Stream info -->
@@ -940,7 +935,7 @@ function makeSchedItem(s) {
     <div class="sched-actions">
       <button class="sched-btn sched-btn-run"    title="Run now"  data-action="run"    data-id="${s.id}">▶</button>
       <button class="sched-btn sched-btn-edit"   title="Edit"     data-action="edit"   data-id="${s.id}">✎</button>
-      <button class="sched-btn sched-btn-delete" title="Delete"   data-action="delete" data-id="${s.id}">✕</button>
+      <button class="sched-btn sched-btn-delete" title="Delete"   data-action="delete" data-id="${s.id}">✖</button>
     </div>`;
   div.querySelectorAll('[data-action]').forEach(el => {
     const action = el.dataset.action;
@@ -1516,7 +1511,7 @@ function updateNowPlaying(streaming, np) {
 
   // Update stream toggle button — always a stop button, red only when streaming
   const streamBtn = document.getElementById('stream-toggle-btn');
-  streamBtn.className = streaming ? 'sched-btn sched-btn-stop' : 'sched-btn';
+  streamBtn.className = 'sched-btn sched-btn-stop';
   streamBtn.disabled  = !streaming;
 
   // Update preview toggle button — disabled when not streaming or no RTMP URL configured
