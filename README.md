@@ -139,7 +139,7 @@ Matched events are scheduled 10 minutes before their listed start time.
 ### Now Playing & Recent Activity (Dashboard)
 
 - **Now Playing** shows the currently active stream with channel logo, name, and start time
-- **Recent Activity** shows the last 10 streams played — click or tap any entry to replay it instantly
+- **Recent Activity** shows the last 5 streams played — click or tap any entry to replay it instantly
 
 ---
 
