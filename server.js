@@ -476,6 +476,9 @@ async function launchPlayer(s) {
       return { ok: false, error: 'Cannot connect to OBS' };
     }
   }
+  // Clear stopped flag before launch so the race guard below only catches stops
+  // that happen *during* this launch, not stops from a previous session
+  if (nowPlaying?.stopped) { nowPlaying.stopped = false; }
   const entry = {
     id:           uuidv4(),
     scheduleId:   s.id,
