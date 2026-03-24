@@ -508,8 +508,8 @@ async function launchPlayer(s) {
   try {
     await ensureOBSStreaming();
     await withOBS(obs => setOBSMediaSource(obs, s.url));
-    // Only update nowPlaying if the stream wasn't stopped while OBS was starting up
-    if (!nowPlaying?.stopped) {
+    // Only skip if THIS specific stream was stopped mid-launch (race condition guard)
+    if (!(nowPlaying?.url === s.url && nowPlaying?.stopped)) {
       nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
       saveNowPlaying();
       pushDashboardEvent('nowplaying', { nowPlaying });

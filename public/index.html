@@ -795,6 +795,7 @@
       <div class="field">
         <label class="lbl">Stream URL</label>
         <input type="text" id="am-url" readonly style="color:var(--muted);font-size:11px;" />
+        <input type="hidden" id="am-logo" />
       </div>
       <div class="field">
         <label class="lbl">Schedule Type</label>
@@ -1424,6 +1425,7 @@ function channelTag(channel) {
 function openAddModal(ch) {
   document.getElementById('am-name').value   = ch.name;
   document.getElementById('am-url').value    = ch.url;
+  document.getElementById('am-logo').value   = ch.logo || '';
 
   // Use eventTime extracted by the server from tvg-name before stripping it from display name
   if (ch.eventTime) {
@@ -1446,11 +1448,11 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   const url  = document.getElementById('am-url').value.trim();
   const body = buildSchedulePayload('am', url);
   if (body.scheduleType === 'now') {
-    const logo = (nowPlayingData?.url === url) ? nowPlayingData.logo : null;
+    const logo = document.getElementById('am-logo').value || null;
     nowPlayingData = { name: body.name, url, logo, startedAt: new Date().toISOString() };
     obsStreaming = true;
     updateNowPlaying(true, nowPlayingData);
-    await POST('/api/play-now', { name: body.name, url });
+    await POST('/api/play-now', { name: body.name, url, logo });
     toast('▶ Playing now!');
     hideModal('add-modal');
     await loadHistory();
@@ -1611,6 +1613,11 @@ function fmtDt(iso) {
 ═══════════════════════════════════════════ */
 (async () => {
   await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo(), loadAutoScheduler()]);
+  // Sync actual OBS streaming state — loadHistory can't know if stream is live after a refresh
+  try {
+    const obs = await GET('/api/obs/status');
+    if (obs.ok) updateNowPlaying(obs.streaming, obs.nowPlaying || nowPlayingData);
+  } catch {}
   // Restore page from URL path, default to dashboard
   const savedPage = location.pathname.replace(/^\//, '') || 'dashboard';
   navTo(savedPage || 'dashboard');
