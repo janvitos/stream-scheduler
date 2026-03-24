@@ -199,9 +199,6 @@
     .stat-val   { font-size: 28px; font-weight: 800; font-family: 'Inter', sans-serif; }
     .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
     .stat-accent  { color: var(--accent); }
-    .stat-accent2 { color: var(--accent2); }
-    .stat-warn    { color: var(--warn); }
-    .stat-danger  { color: var(--danger); }
 
     /* ── Form ── */
     .form-grid { display: grid; gap: 16px; }
@@ -392,8 +389,6 @@
     .align-center { align-items: center; }
     .inter { font-family: 'Inter', sans-serif; }
     .text-muted   { color: var(--muted); }
-    .text-accent  { color: var(--accent); }
-    .text-danger  { color: var(--danger); }
     .text-sm { font-size: 12px; }
     .setting-text { font-size: 13px; }
     .cursor-pointer { cursor: pointer; }
@@ -948,8 +943,11 @@ function makeSchedItem(s) {
 }
 
 async function runNow(id) {
-  await POST(`/api/schedules/${id}/run`);
-  toast('▶ Player launched!');
+  const s = schedules.find(s => s.id === id);
+  if (!s) return;
+  const r = await POST('/api/play-now', { name: s.name, url: s.url, logo: s.logo || null });
+  r.ok ? toast('▶ Player launched!') : toast(r.error || 'Cannot connect to OBS', 'error');
+  if (r.ok && s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
   await loadHistory();
   renderDashboard();
 }
@@ -1076,11 +1074,8 @@ function makeHistoryItem(h) {
   if (h.url) {
     div.addEventListener('click', async () => {
       div.style.pointerEvents = 'none';
-      nowPlayingData = { name: h.scheduleName, url: h.url, logo: h.logo || null, startedAt: new Date().toISOString() };
-      obsStreaming = true;
-      updateNowPlaying(true, nowPlayingData);
-      await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
-      toast('▶ Launching…');
+      const r = await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
+      r.ok ? toast('▶ Launching…') : toast(r.error || 'Cannot connect to OBS', 'error');
       div.style.pointerEvents = '';
     });
   }
@@ -1444,11 +1439,8 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   const body = buildSchedulePayload('am', url);
   if (body.scheduleType === 'now') {
     const logo = document.getElementById('am-logo').value || null;
-    nowPlayingData = { name: body.name, url, logo, startedAt: new Date().toISOString() };
-    obsStreaming = true;
-    updateNowPlaying(true, nowPlayingData);
-    await POST('/api/play-now', { name: body.name, url, logo });
-    toast('▶ Playing now!');
+    const r = await POST('/api/play-now', { name: body.name, url, logo });
+    r.ok ? toast('▶ Playing now!') : toast(r.error || 'Cannot connect to OBS', 'error');
     hideModal('add-modal');
     await loadHistory();
     return;

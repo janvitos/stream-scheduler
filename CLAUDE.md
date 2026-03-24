@@ -65,7 +65,7 @@ UI patterns:
 
 - **OBS source types** — `settings.obsSourceType` is either `'media'` (OBS Media Source, named exactly `Media`) or `'vlc'` (VLC Video Source, named exactly `VLC Video`). `setOBSMediaSource` automatically shows the active source and hides the inactive one in the current scene.
 - **M3U cache is dual-layer** — disk (`m3u_cache.json`) loaded into `m3uMemCache` at startup; all searches run against the in-memory copy.
-- **History cap is 10** — enforced in `saveHistory()`.
+- **History cap is 10** — enforced in `saveHistory()`. The Recent Activity panel in the UI renders only the last 5 entries.
 - **`nowPlaying` persistence** — saved to `data/now_playing.json` on every change. On startup, if OBS is not streaming, `nowPlaying` is not cleared automatically — `launchPlayer` does a real-time OBS status check when the same URL is requested to decide whether to skip or proceed.
 - **`launchPlayer` dedup logic** — skips if `nowPlaying.url === s.url && !nowPlaying.stopped`, but only after confirming via `GetStreamStatus` that OBS is actually streaming. If OBS is not streaming, proceeds regardless.
 - **Preview RTMP URL** — configurable via `settings.rtmpUrl`. Can be auto-detected from OBS via `GET /api/obs/rtmp-url` (reads `GetStreamServiceSettings`). Auto-detect only fires when `settings.rtmpAutoDetect` is true and the field is empty.

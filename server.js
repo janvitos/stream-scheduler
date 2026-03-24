@@ -46,7 +46,7 @@ let autoScheduler = readJSON(AUTO_SCHED_PATH, {
 });
 const MAX_HISTORY = 10;
 let history   = readJSON(HISTORY_PATH, []).slice(-MAX_HISTORY); // enforce limit on load
-let settings  = readJSON(SETTINGS_PATH, { playerPath: 'mpv', playerArgs: '', m3uAutoRefresh: false, m3uRefreshTime: '06:00' });
+let settings  = readJSON(SETTINGS_PATH, { m3uAutoRefresh: false, m3uRefreshTime: '06:00' });
 
 const saveSchedules = () => { writeJSON(SCHED_PATH, schedules); pushDashboardEvent('schedule'); };
 const saveHistory    = () => { history = history.slice(-MAX_HISTORY); writeJSON(HISTORY_PATH, history); pushDashboardEvent('history'); };
@@ -56,7 +56,7 @@ const saveAutoScheduler = () => writeJSON(AUTO_SCHED_PATH, autoScheduler);
 
 // Trim activity log to 10 on startup in case it has excess entries
 if (autoScheduler.activityLog.length > 10) {
-  autoScheduler.activityLog = autoScheduler.activityLog.slice(0, 10);
+  autoScheduler.activityLog = autoScheduler.activityLog.slice(-10);
   saveAutoScheduler();
 }
 
@@ -161,8 +161,6 @@ app.post('/api/schedules', (req, res) => {
     name:        req.body.name        || 'Untitled',
     url:         req.body.url,
     logo:        req.body.logo || (m3uMemCache?.channels || []).find(c => c.url === req.body.url)?.logo || null,
-    playerPath:  req.body.playerPath  || settings.playerPath,
-    playerArgs:  req.body.playerArgs  || settings.playerArgs,
     scheduleType: req.body.scheduleType || 'once',   // once | cron
     runAt:       req.body.runAt  || null,            // ISO string for once
     cronExpr:    req.body.cronExpr || null,          // cron string for recurring
@@ -200,22 +198,15 @@ app.delete('/api/schedules/:id', (req, res) => {
 });
 
 // Play now — launches immediately, logs to history, no schedule entry created
-app.post('/api/play-now', (req, res) => {
-  const { name, url, playerPath, playerArgs, noHistory, logo } = req.body;
+app.post('/api/play-now', async (req, res) => {
+  const { name, url, noHistory, logo } = req.body;
   if (!url) return res.status(400).json({ error: 'URL required' });
   const resolvedLogo = logo || (m3uMemCache?.channels || []).find(c => c.url === url)?.logo || null;
-  const s = { id: null, name: name || 'Now', url, playerPath, playerArgs, noHistory, logo: resolvedLogo };
-  launchPlayer(s);
-  res.json({ ok: true });
+  const s = { id: null, name: name || 'Now', url, noHistory, logo: resolvedLogo };
+  const result = await launchPlayer(s);
+  res.json(result);
 });
 
-// Trigger immediately
-app.post('/api/schedules/:id/run', (req, res) => {
-  const s = schedules.find(s => s.id === req.params.id);
-  if (!s) return res.status(404).json({ error: 'Not found' });
-  launchPlayer(s);
-  res.json({ ok: true });
-});
 
 // ── History ────────────────────────────────────────────────────────────────────
 app.get('/api/history', (req, res) => res.json(history.slice().reverse())); // newest first
@@ -438,11 +429,16 @@ async function ensureOBSStreaming() {
   }
 }
 
+// Returns { activeName, inactiveName } for the currently configured OBS source type
+function obsSourceNames() {
+  const isVLC = (settings.obsSourceType || 'media') === 'vlc';
+  return { activeName: isVLC ? 'VLC Video' : 'Media', inactiveName: isVLC ? 'Media' : 'VLC Video' };
+}
+
 // #11 — shared OBS source setter (supports Media and VLC Video source types)
 async function setOBSMediaSource(obs, url) {
-  const isVLC        = (settings.obsSourceType || 'media') === 'vlc';
-  const activeName   = isVLC ? 'VLC Video' : 'Media';
-  const inactiveName = isVLC ? 'Media' : 'VLC Video';
+  const { activeName, inactiveName } = obsSourceNames();
+  const isVLC = activeName === 'VLC Video';
 
   await obs.call('SetInputSettings', {
     inputName:     activeName,
@@ -474,10 +470,10 @@ async function launchPlayer(s) {
     // Real-time check: only skip if OBS is actually streaming
     try {
       const { outputActive } = await withOBS(obs => obs.call('GetStreamStatus'));
-      if (outputActive) return; // genuinely streaming this URL, skip
+      if (outputActive) return { ok: true }; // genuinely streaming this URL, skip
       // OBS not streaming — fall through to re-launch
     } catch {
-      return; // OBS unavailable, can't play anyway
+      return { ok: false, error: 'Cannot connect to OBS' };
     }
   }
   const entry = {
@@ -503,11 +499,10 @@ async function launchPlayer(s) {
     if (idx !== -1) { schedules[idx].lastRun = entry.startedAt; saveSchedules(); }
   };
 
-  logEntry();
-
   try {
     await ensureOBSStreaming();
     await withOBS(obs => setOBSMediaSource(obs, s.url));
+    logEntry();
     // Only skip if THIS specific stream was stopped mid-launch (race condition guard)
     if (!(nowPlaying?.url === s.url && nowPlaying?.stopped)) {
       nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
@@ -515,8 +510,10 @@ async function launchPlayer(s) {
       pushDashboardEvent('nowplaying', { nowPlaying });
     }
     console.log('[OBS] Source updated:', s.url);
+    return { ok: true };
   } catch (e) {
     console.error('[OBS] Failed to update media source:', e.message);
+    return { ok: false, error: 'Cannot connect to OBS' };
   }
 }
 
@@ -846,14 +843,14 @@ app.post('/api/obs/stream/stop', async (req, res) => {
   try {
     await withOBS(async obs => {
       await obs.call('StopStream');
-      const isVLC      = (settings.obsSourceType || 'media') === 'vlc';
-      const sourceName = isVLC ? 'VLC Video' : 'Media';
+      const { activeName } = obsSourceNames();
+      const isVLC = activeName === 'VLC Video';
       await obs.call('TriggerMediaInputAction', {
-        inputName:   sourceName,
+        inputName:   activeName,
         mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP'
       });
       await obs.call('SetInputSettings', {
-        inputName:     sourceName,
+        inputName:     activeName,
         inputSettings: isVLC ? { playlist: [] } : { input: '', is_local_file: false, looping: false }
       });
     });
