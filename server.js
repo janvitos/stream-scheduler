@@ -859,6 +859,7 @@ app.post('/api/obs/stream/stop', async (req, res) => {
     });
     // Keep nowPlaying data but mark as stopped so Start knows the URL
     if (nowPlaying) { nowPlaying.stopped = true; saveNowPlaying(); }
+    pushDashboardEvent('nowplaying', { nowPlaying });
     pushDashboardEvent('history');
     res.json({ ok: true });
   } catch (e) {

@@ -1013,10 +1013,9 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
   if (!url) { toast('Stream URL is required', 'error'); return; }
   const body = buildSchedulePayload('sm', url);
   if (body.scheduleType === 'now') {
-    await POST('/api/play-now', { name: body.name, url });
-    toast('▶ Playing now!');
     hideModal('sched-modal');
-    await loadHistory();
+    const r = await POST('/api/play-now', { name: body.name, url });
+    r.ok ? toast('▶ Playing now!') : toast(r.error || 'Cannot connect to OBS', 'error');
     return;
   }
   if (editingId) {
@@ -1034,9 +1033,9 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
    Dashboard
 ═══════════════════════════════════════════ */
 async function renderDashboard() {
-  // Recent activity — skip history[0] (shown in Now Playing), cap at 5
+  // Recent activity — always show last 5 entries
   const rh = document.getElementById('recent-history');
-  const recent = history.slice(obsStreaming ? 1 : 0, obsStreaming ? 6 : 5);
+  const recent = history.slice(0, 5);
   if (!recent.length) { rh.innerHTML = '<div class="empty"><div class="empty-icon">☰</div><p>No recent activity.</p></div>'; return; }
   rh.innerHTML = '<div class="item-list"></div>';
   const hl = rh.querySelector('.item-list');
@@ -1439,10 +1438,9 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   const body = buildSchedulePayload('am', url);
   if (body.scheduleType === 'now') {
     const logo = document.getElementById('am-logo').value || null;
+    hideModal('add-modal');
     const r = await POST('/api/play-now', { name: body.name, url, logo });
     r.ok ? toast('▶ Playing now!') : toast(r.error || 'Cannot connect to OBS', 'error');
-    hideModal('add-modal');
-    await loadHistory();
     return;
   }
   await POST('/api/schedules', body);
@@ -1668,7 +1666,7 @@ function makeSSE(url, onMessage) {
 const connectDashboardSSE = makeSSE('/api/events', ({ type, nowPlaying }) => {
   if (type === 'history')    loadHistory();
   if (type === 'schedule')   loadSchedules();
-  if (type === 'nowplaying') { obsStreaming = true; if (nowPlaying) nowPlayingData = nowPlaying; updateNowPlaying(true, nowPlayingData); loadHistory(); }
+  if (type === 'nowplaying') { if (nowPlaying) nowPlayingData = nowPlaying; const active = !nowPlaying?.stopped; obsStreaming = active; updateNowPlaying(active, nowPlayingData); loadHistory(); }
 });
 
 const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
