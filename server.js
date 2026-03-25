@@ -303,7 +303,7 @@ app.get('/api/m3u/download', async (req, res) => {
           if (err) console.warn('Could not persist M3U cache:', err.message);
         });
 
-        logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded.`);
+        logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded`);
         send({ type: 'done', count: channels.length });
       } catch (parseErr) {
         logAutoActivity('error', `M3U manual refresh failed: ${parseErr.message}`);
@@ -567,11 +567,11 @@ async function runAutoScheduler() {
   const { searchString, apiEndpoint } = autoScheduler;
 
   if (!searchString || !apiEndpoint) {
-    logAutoActivity('error', 'Search string or API endpoint not configured.');
+    logAutoActivity('error', 'Search string or API endpoint not configured');
     return;
   }
   if (!m3uMemCache || !m3uMemCache.sourceUrl) {
-    logAutoActivity('error', 'M3U cache not loaded. Please load M3U manually first.');
+    logAutoActivity('error', 'M3U cache not loaded — please load M3U manually first');
     return;
   }
 
@@ -579,7 +579,7 @@ async function runAutoScheduler() {
     try {
       logAutoActivity('info', 'Refreshing M3U…');
       const count = await refreshM3U();
-      logAutoActivity('info', `M3U refreshed — ${count} channels loaded.`);
+      logAutoActivity('info', `M3U refreshed — ${count} channels loaded`);
     } catch (e) {
       logAutoActivity('error', `M3U refresh failed: ${e.message}`);
       return;
@@ -616,7 +616,7 @@ async function runAutoScheduler() {
   });
 
   if (matches.length === 0) {
-    logAutoActivity('info', `No ${searchString} games found today (${friendlyDate}).`);
+    logAutoActivity('info', `No ${searchString} games found today (${friendlyDate})`);
     return;
   }
 
@@ -658,7 +658,7 @@ async function runAutoScheduler() {
     }
 
     if (matching.length === 0) {
-      logAutoActivity('warn', `Found ${gameName} but no M3U channel matched ${searchString} on ${friendlyDate}.`);
+      logAutoActivity('warn', `Found ${gameName} but no M3U channel matched ${searchString} on ${friendlyDate}`);
       continue;
     }
 
@@ -680,7 +680,7 @@ async function runAutoScheduler() {
       s.url === ch.url && s.runAt && s.runAt.startsWith(`${yyyy}-${mm}-${dd}`)
     );
     if (isDuplicate) {
-      logAutoActivity('info', `${gameName} already scheduled — skipping.`);
+      logAutoActivity('info', `${gameName} already scheduled — skipping`);
       continue;
     }
 
@@ -723,7 +723,7 @@ function startM3URefreshCron() {
     try {
       const count = await refreshM3U();
       console.log(`[M3U] Daily refresh complete — ${count} channels.`);
-      logAutoActivity('info', `M3U auto-refreshed — ${count} channels loaded.`);
+      logAutoActivity('info', `M3U auto-refreshed — ${count} channels loaded`);
     } catch (e) {
       console.warn('[M3U] Daily refresh failed:', e.message);
       logAutoActivity('error', `M3U auto-refresh failed: ${e.message}`);
@@ -938,5 +938,5 @@ wss.on('connection', ws => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n✓ Stream Scheduler running at http://0.0.0.0:${PORT}`);
   console.log(`  Open http://localhost:${PORT} in your browser\n`);
-  logAutoActivity('info', 'Service started.');
+  logAutoActivity('info', 'Service started');
 });
