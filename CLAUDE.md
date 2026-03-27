@@ -53,7 +53,7 @@ UI patterns:
 - All buttons use a **semi-transparent tinted style**: `rgba(color, .12)` background, vivid color text, `rgba(color, .25)` border. Green = action, blue = edit, red = delete/stop/danger.
 - Square 38×38 `sched-btn` variants: `sched-btn-edit` (blue), `sched-btn-delete` (red), `sched-btn-stop` (red), `sched-btn-active` (outlined green, used for preview active state).
 - Active Relay cards and Recent Activity are **separate cards** on the dashboard.
-- Relay cards display: logo, stream name, `tag-time` (start time), `tag-slot` (slot name, blue tint), channel tag.
+- Relay cards display: logo, stream name, `tag-time` (start time), `tag-slot` (slot name, orange tint), channel tag.
 
 ### Data files (`data/`)
 
@@ -69,7 +69,7 @@ UI patterns:
 
 ### Key design notes
 
-- **FFmpeg relay** — `bin/ffmpeg.exe` re-encodes IPTV streams and pushes to SRS via RTMP. Copy mode (`-c copy`) is intentionally avoided — it fails with these IPTV sources. Re-encode args: `-c:v libx264 -preset veryfast -crf 23 -g 60 -c:a aac -b:a 128k -f flv`. Input uses `-fflags +genpts+discardcorrupt -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5`.
+- **FFmpeg relay** — `bin/ffmpeg.exe` re-encodes IPTV streams and pushes to SRS via RTMP. Copy mode (`-c copy`) is intentionally avoided — it fails with these IPTV sources. Full args: `-re -fflags +genpts+discardcorrupt -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -i <url> -c:v libx264 -preset veryfast -tune zerolatency -crf 23 -g 60 -c:a aac -b:a 128k -f flv`. `-re` is critical — IPTV sources are plain MPEG-TS over HTTP delivered in TCP bursts; without `-re`, FFmpeg consumes them faster than realtime, causing SRS to produce irregular HLS segments and the player to stall.
 - **SRS dual-URL** — `srsUrl` is the RTMP push target (LAN IP, e.g. `rtmp://192.168.1.125/live`) used by FFmpeg. `srsWatchUrl` is the HTTPS base for Watch/HLS links (e.g. `https://stream.ipnoze.com/live`), served via nginx proxy. HLS stream for a slot is `srsWatchUrl/<slot>.m3u8`.
 - **Relay slots** — up to 5 slots (`stream01`–`stream05`). `settings.maxSlots` (1–5, default 2) controls how many are available. Schedules and play-now support a `preferredSlot`; if the preferred slot is free and within `maxSlots`, it is used — otherwise auto-assigns the first free slot.
 - **PID-based process survival** — FFmpeg PIDs are persisted to `relays.json`. On restart, live PIDs are re-adopted (no proc handle; kill via `process.kill(pid, 'SIGTERM')`). This means streams survive a Node.js crash/restart without interruption.

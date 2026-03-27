@@ -76,6 +76,37 @@ StreamSched pushes RTMP to SRS and reads HLS back. Two URLs need to be set in **
 
 HLS for each slot is served at `{SRS Watch URL}/{slot}.m3u8` — e.g. `https://stream.example.com/live/stream01.m3u8`.
 
+**Recommended `srs.conf`:**
+
+```nginx
+listen              1935;
+max_connections     1000;
+srs_log_tank        console;
+
+http_server {
+    enabled         on;
+    listen          8080;
+    dir             ./objs/nginx/html;
+}
+
+vhost __defaultVhost__ {
+    publish {
+        firstpkt_timeout    20000;  # ms — wait for first packet
+        normal_timeout      30000;  # ms — tolerance for gaps in IPTV streams (default 5000 is too aggressive)
+    }
+
+    hls {
+        enabled         on;
+        hls_path        ./objs/nginx/html;
+        hls_fragment    1;
+        hls_window      6;          # seconds of HLS buffer — 6 is a good balance for live sports
+        hls_dispose     10;
+    }
+}
+```
+
+The `normal_timeout` increase is important — IPTV streams can have brief gaps that the default 5-second timeout treats as a dead connection, killing the relay. The `hls_window 6` gives the browser player enough buffer to absorb minor hiccups without stalling.
+
 ### 5. Start the server
 
 ```bash
