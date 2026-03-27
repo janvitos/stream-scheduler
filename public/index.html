@@ -206,6 +206,7 @@
     .form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     label.lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; }
+    input:disabled { opacity: .35; cursor: not-allowed; }
     input[type=text], input[type=password], input[type=number],
     input[type=datetime-local], input[type=time], select {
       background: var(--bg);
@@ -758,22 +759,23 @@
         <label class="lbl">Relay Slot</label>
         <select id="sm-slot"></select>
       </div>
-      <div class="field" id="sm-once-wrap">
-        <label class="lbl">Run At</label>
-        <input type="datetime-local" id="sm-runat" step="60" />
-      </div>
-      <div class="field" id="sm-cron-wrap" style="display:none">
-        <label class="lbl">Cron Expression</label>
-        <input type="text" id="sm-cron" name="sm-cron" placeholder="0 20 * * 1-5  (weekdays at 8 PM)" />
-        <div class="help">Standard 5-field cron: min hour day month weekday</div>
-      </div>
       <div class="field">
         <label class="lbl">Schedule Type</label>
         <select id="sm-type">
           <option value="now">Now</option>
           <option value="once">One-time</option>
-          <option value="cron">Recurring (cron)</option>
+          <option value="cron">Recurring</option>
         </select>
+      </div>
+      <div class="field" id="sm-once-wrap">
+        <label class="lbl">Run At</label>
+        <input type="datetime-local" id="sm-runat" step="60" />
+        <div class="help" style="visibility:hidden">​</div>
+      </div>
+      <div class="field" id="sm-cron-wrap" style="display:none">
+        <label class="lbl">Cron Expression</label>
+        <input type="text" id="sm-cron" name="sm-cron" placeholder="0 20 * * 1-5  (weekdays at 8 PM)" />
+        <div class="help">Standard 5-field cron: min hour day month weekday</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -804,6 +806,14 @@
         <label class="lbl">Relay Slot</label>
         <select id="am-slot"></select>
       </div>
+      <div class="field">
+        <label class="lbl">Schedule Type</label>
+        <select id="am-type">
+          <option value="now">Now</option>
+          <option value="once">One-time</option>
+          <option value="cron">Recurring</option>
+        </select>
+      </div>
       <div class="field" id="am-once-wrap">
         <label class="lbl">Run At</label>
         <input type="datetime-local" id="am-runat" step="60" />
@@ -811,14 +821,6 @@
       <div class="field" id="am-cron-wrap" style="display:none">
         <label class="lbl">Cron Expression</label>
         <input type="text" id="am-cron" name="am-cron" placeholder="0 20 * * 1-5" />
-      </div>
-      <div class="field">
-        <label class="lbl">Schedule Type</label>
-        <select id="am-type">
-          <option value="now">Now</option>
-          <option value="once">One-time</option>
-          <option value="cron">Recurring (cron)</option>
-        </select>
       </div>
     </div>
     <div class="modal-footer">
@@ -1026,8 +1028,17 @@ function openEditModal(id) {
 }
 
 function toggleTypeFields(prefix, v) {
-  document.getElementById(prefix + '-once-wrap').style.display = v==='once' ? '' : 'none';
-  document.getElementById(prefix + '-cron-wrap').style.display = v==='cron' ? '' : 'none';
+  const onceWrap = document.getElementById(prefix + '-once-wrap');
+  const cronWrap = document.getElementById(prefix + '-cron-wrap');
+  const runat    = document.getElementById(prefix + '-runat');
+  if (v === 'cron') {
+    onceWrap.style.display = 'none';
+    cronWrap.style.display = '';
+  } else {
+    onceWrap.style.display = '';
+    cronWrap.style.display = 'none';
+    runat.disabled = v !== 'once';
+  }
 }
 document.getElementById('sm-type').addEventListener('change', e => toggleTypeFields('sm', e.target.value));
 
@@ -1507,7 +1518,9 @@ document.getElementById('save-pw-btn').addEventListener('click', async () => {
 function showModal(id) { document.getElementById(id).classList.add('show'); }
 function hideModal(id) { document.getElementById(id).classList.remove('show'); }
 document.querySelectorAll('.modal-overlay').forEach(o => {
-  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
+  let downOnOverlay = false;
+  o.addEventListener('mousedown', e => { downOnOverlay = e.target === o; });
+  o.addEventListener('mouseup',   e => { if (downOnOverlay && e.target === o) o.classList.remove('show'); });
 });
 
 /* ═══════════════════════════════════════════
