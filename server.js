@@ -2,56 +2,73 @@
 'use strict';
 
 const express      = require('express');
-const { OBSWebSocket } = require('obs-websocket-js');
-const { WebSocketServer } = require('ws');
 const session      = require('express-session');
 const bcrypt       = require('bcryptjs');
 const path         = require('path');
 const fs           = require('fs');
 const cron         = require('node-cron');
-const { spawn } = require('child_process');
+const { spawn }    = require('child_process');
 const axios        = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const DATA_DIR     = path.join(__dirname, 'data');
-const CONFIG_PATH  = path.join(DATA_DIR, 'config.json');
-const SCHED_PATH   = path.join(DATA_DIR, 'schedules.json');
-const HISTORY_PATH     = path.join(DATA_DIR, 'history.json');
-const NOW_PLAYING_PATH = path.join(DATA_DIR, 'now_playing.json');
-const SETTINGS_PATH= path.join(DATA_DIR, 'settings.json');
+const DATA_DIR        = path.join(__dirname, 'data');
+const CONFIG_PATH     = path.join(DATA_DIR, 'config.json');
+const SCHED_PATH      = path.join(DATA_DIR, 'schedules.json');
+const HISTORY_PATH    = path.join(DATA_DIR, 'history.json');
+const SETTINGS_PATH   = path.join(DATA_DIR, 'settings.json');
 const AUTO_SCHED_PATH = path.join(DATA_DIR, 'auto_scheduler.json');
+const RELAYS_PATH     = path.join(DATA_DIR, 'relays.json');
+const FFMPEG_PATH     = path.join(__dirname, 'bin', 'ffmpeg.exe');
+const ALL_SLOTS       = ['stream01', 'stream02', 'stream03', 'stream04', 'stream05'];
 
 if (!fs.existsSync(CONFIG_PATH)) {
   console.error('✗  config.json not found. Run  node setup.js  first.');
   process.exit(1);
 }
 
-const config   = JSON.parse(fs.readFileSync(CONFIG_PATH));
-const PORT     = config.port || 3000;
+const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+const PORT   = config.port || 3000;
 
 // ─── Persistence helpers ──────────────────────────────────────────────────────
 const readJSON  = (p, def) => { try { return JSON.parse(fs.readFileSync(p)); } catch { return def; } };
 const writeJSON = (p, d)   => fs.writeFileSync(p, JSON.stringify(d, null, 2));
 
 let schedules     = readJSON(SCHED_PATH, []);
-let nowPlaying    = readJSON(NOW_PLAYING_PATH, null); // { name, url, startedAt }
 let autoScheduler = readJSON(AUTO_SCHED_PATH, {
-  enabled: false,
-  searchString: 'Texas Tech',
-  apiEndpoint: 'https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard',
-  checkTime: '07:00',
+  enabled:          false,
+  searchString:     'Texas Tech',
+  apiEndpoint:      'https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard',
+  checkTime:        '07:00',
   refreshBeforeRun: false,
-  activityLog: []
+  preferredSlot:    null,
+  activityLog:      []
 });
 const MAX_HISTORY = 10;
-let history   = readJSON(HISTORY_PATH, []).slice(-MAX_HISTORY); // enforce limit on load
-let settings  = readJSON(SETTINGS_PATH, { m3uAutoRefresh: false, m3uRefreshTime: '06:00' });
+let history  = readJSON(HISTORY_PATH, []).slice(-MAX_HISTORY);
+let settings = readJSON(SETTINGS_PATH, {
+  srsUrl:         'rtmp://192.168.1.125/live',
+  srsWatchUrl:    'https://stream.ipnoze.com/live',
+  maxSlots:       2,
+  m3uAutoRefresh: false,
+  m3uRefreshTime: '06:00'
+});
 
-const saveSchedules = () => { writeJSON(SCHED_PATH, schedules); pushDashboardEvent('schedule'); };
-const saveHistory    = () => { history = history.slice(-MAX_HISTORY); writeJSON(HISTORY_PATH, history); pushDashboardEvent('history'); };
-const saveNowPlaying = () => writeJSON(NOW_PLAYING_PATH, nowPlaying);
-const saveSettings    = () => writeJSON(SETTINGS_PATH, settings);
+// ─── Relay state ──────────────────────────────────────────────────────────────
+// In-memory map: slot → { slot, name, url, logo, startedAt, pid, proc }
+const relays = new Map();
+
+const getRelayStates = () =>
+  [...relays.values()].map(({ proc, ...r }) => r); // strip proc — not serialisable
+
+const saveRelays = () => {
+  writeJSON(RELAYS_PATH, getRelayStates());
+  pushDashboardEvent('relays', { relays: getRelayStates() });
+};
+
+const saveSchedules     = () => { writeJSON(SCHED_PATH, schedules); pushDashboardEvent('schedule'); };
+const saveHistory       = () => { history = history.slice(-MAX_HISTORY); writeJSON(HISTORY_PATH, history); pushDashboardEvent('history'); };
+const saveSettings      = () => writeJSON(SETTINGS_PATH, settings);
 const saveAutoScheduler = () => writeJSON(AUTO_SCHED_PATH, autoScheduler);
 
 // Trim activity log to 10 on startup in case it has excess entries
@@ -66,10 +83,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-  secret: config.sessionSecret || 'change-me',
-  resave: false,
+  secret:            config.sessionSecret || 'change-me',
+  resave:            false,
   saveUninitialized: false,
-  cookie: { maxAge: 90 * 24 * 60 * 60 * 1000 }  // 90 days
+  cookie:            { maxAge: 90 * 24 * 60 * 60 * 1000 }  // 90 days
 }));
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
@@ -86,7 +103,6 @@ app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'log
 app.post('/api/system/restart', (req, res) => {
   res.json({ ok: true });
   // Use a detached cmd process with a delay so it survives Node being killed
-  // The /c timeout command waits 2 seconds before issuing the restart
   setTimeout(() => {
     const proc = spawn('cmd.exe', ['/c', 'timeout /t 2 /nobreak & nssm restart StreamSched'],
       { detached: true, stdio: 'ignore', windowsHide: true });
@@ -129,7 +145,6 @@ app.post('/api/auth/change-password', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   try {
     config.passwordHash = await bcrypt.hash(password, 12);
-    // Persist updated hash back to config.json
     const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH));
     cfg.passwordHash = config.passwordHash;
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
@@ -146,7 +161,12 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 // ── Settings ──────────────────────────────────────────────────────────────────
 app.get('/api/settings', (req, res) => res.json(settings));
 app.put('/api/settings', (req, res) => {
-  settings = { ...settings, ...req.body };
+  const { maxSlots, ...rest } = req.body;
+  settings = {
+    ...settings,
+    ...rest,
+    ...(maxSlots !== undefined ? { maxSlots: Math.max(1, Math.min(5, parseInt(maxSlots) || 2)) } : {})
+  };
   saveSettings();
   startM3URefreshCron();
   res.json(settings);
@@ -157,17 +177,18 @@ app.get('/api/schedules', (req, res) => res.json(schedules));
 
 app.post('/api/schedules', (req, res) => {
   const s = {
-    id:          uuidv4(),
-    name:        req.body.name        || 'Untitled',
-    url:         req.body.url,
-    logo:        req.body.logo || (m3uMemCache?.channels || []).find(c => c.url === req.body.url)?.logo || null,
-    scheduleType: req.body.scheduleType || 'once',   // once | cron
-    runAt:       req.body.runAt  || null,            // ISO string for once
-    cronExpr:    req.body.cronExpr || null,          // cron string for recurring
-    enabled:     true,
-    createdAt:   new Date().toISOString(),
-    lastRun:     null,
-    nextRun:     null
+    id:           uuidv4(),
+    name:         req.body.name        || 'Untitled',
+    url:          req.body.url,
+    logo:         req.body.logo || (m3uMemCache?.channels || []).find(c => c.url === req.body.url)?.logo || null,
+    scheduleType:  req.body.scheduleType  || 'once',
+    runAt:         req.body.runAt         || null,
+    cronExpr:      req.body.cronExpr      || null,
+    preferredSlot: req.body.preferredSlot || null,
+    enabled:       true,
+    createdAt:    new Date().toISOString(),
+    lastRun:      null,
+    nextRun:      null
   };
   if (!s.url) return res.status(400).json({ error: 'URL required' });
   schedules.push(s);
@@ -202,23 +223,32 @@ app.post('/api/play-now', async (req, res) => {
   const { name, url, noHistory, logo } = req.body;
   if (!url) return res.status(400).json({ error: 'URL required' });
   const resolvedLogo = logo || (m3uMemCache?.channels || []).find(c => c.url === url)?.logo || null;
-  const s = { id: null, name: name || 'Now', url, noHistory, logo: resolvedLogo };
-  const result = await launchPlayer(s);
+  const { preferredSlot } = req.body;
+  const s = { id: null, name: name || 'Now', url, noHistory, logo: resolvedLogo, preferredSlot: preferredSlot || null };
+  const result = await launchStream(s);
   res.json(result);
 });
-
 
 // ── History ────────────────────────────────────────────────────────────────────
 app.get('/api/history', (req, res) => res.json(history.slice().reverse())); // newest first
 app.delete('/api/history', (req, res) => { history = []; saveHistory(); res.json({ ok: true }); });
 
+// ── Relays ────────────────────────────────────────────────────────────────────
+app.get('/api/relays', (req, res) => res.json(getRelayStates()));
+
+app.post('/api/relays/:slot/stop', (req, res) => {
+  const { slot } = req.params;
+  if (!ALL_SLOTS.includes(slot)) return res.status(400).json({ error: 'Invalid slot' });
+  const killed = killRelay(slot);
+  if (!killed) return res.status(404).json({ error: 'Slot not active' });
+  res.json({ ok: true });
+});
+
 // ── M3U / Xtream ──────────────────────────────────────────────────────────────
 const M3U_CACHE_PATH = path.join(DATA_DIR, 'm3u_cache.json');
 
-// In-memory channel cache
 let m3uMemCache = null; // { channels, fetchedAt, sourceUrl, byteSize }
 
-// Load persisted cache from disk on startup
 try {
   if (fs.existsSync(M3U_CACHE_PATH)) {
     const raw = fs.readFileSync(M3U_CACHE_PATH, 'utf8');
@@ -230,19 +260,17 @@ try {
   m3uMemCache = null;
 }
 
-// Return metadata about the current cache (no channel data — keep it light)
 app.get('/api/m3u/cache-info', (req, res) => {
   if (!m3uMemCache) return res.json({ exists: false });
   res.json({
-    exists:     true,
-    count:      m3uMemCache.channels.length,
-    fetchedAt:  m3uMemCache.fetchedAt,
-    sourceUrl:  m3uMemCache.sourceUrl,
-    byteSize:   m3uMemCache.byteSize || 0
+    exists:    true,
+    count:     m3uMemCache.channels.length,
+    fetchedAt: m3uMemCache.fetchedAt,
+    sourceUrl: m3uMemCache.sourceUrl,
+    byteSize:  m3uMemCache.byteSize || 0
   });
 });
 
-// Load the persisted cache into the active search cache (no download needed)
 app.post('/api/m3u/use-cache', (req, res) => {
   if (!m3uMemCache) return res.status(404).json({ error: 'No cached M3U found on server' });
   res.json({
@@ -258,7 +286,6 @@ app.get('/api/m3u/download', async (req, res) => {
   const url = req.query.url;
   if (!url) { res.status(400).end(); return; }
 
-  // SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('X-Accel-Buffering', 'no');
@@ -269,11 +296,7 @@ app.get('/api/m3u/download', async (req, res) => {
   try {
     send({ type: 'start' });
 
-    const resp = await axios.get(url, {
-      timeout: 120000,
-      responseType: 'stream',
-    });
-
+    const resp = await axios.get(url, { timeout: 120000, responseType: 'stream' });
     const total = parseInt(resp.headers['content-length'] || '0', 10);
     let received = 0;
     const chunks = [];
@@ -294,15 +317,10 @@ app.get('/api/m3u/download', async (req, res) => {
         const raw = Buffer.concat(chunks).toString('utf8');
         send({ type: 'parsing' });
         const channels = parseM3U(raw);
-
-        // Update in-memory cache
         m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: received };
-
-        // Persist to disk (write asynchronously so SSE isn't delayed)
         fs.writeFile(M3U_CACHE_PATH, JSON.stringify(m3uMemCache), (err) => {
           if (err) console.warn('Could not persist M3U cache:', err.message);
         });
-
         logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded`);
         send({ type: 'done', count: channels.length });
       } catch (parseErr) {
@@ -323,7 +341,6 @@ app.get('/api/m3u/download', async (req, res) => {
   }
 });
 
-// Search — works against the in-memory cache regardless of source (download or disk)
 app.post('/api/m3u/search', (req, res) => {
   const { query } = req.body;
   if (!m3uMemCache) return res.status(404).json({ error: 'No M3U loaded — download one or load from cache first' });
@@ -364,7 +381,7 @@ function parseM3U(text) {
         if (year >= 2020 && year <= 2097) meta.eventTime = isoMatch[1] + 'T' + isoMatch[2];
       }
       meta.name = rawName.replace(/\s*\(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?\)\s*$/, '').replace(/\s*\|\s*$/, '').trim();
-      if (!meta.name && nameMatch) meta.name = nameMatch[1].trim(); // fallback
+      if (!meta.name && nameMatch) meta.name = nameMatch[1].trim();
 
     } else if (line && !line.startsWith('#') && meta !== null) {
       if (!meta.name) meta.name = line;
@@ -387,20 +404,19 @@ function registerSchedule(s) {
     if (runTime > now) {
       const delay = runTime - now;
       const timer = setTimeout(() => {
-        launchPlayer(s);
+        launchStream(s);
         // delete after firing — one-time schedules don't linger
         const idx = schedules.findIndex(x => x.id === s.id);
         if (idx !== -1) { schedules.splice(idx, 1); saveSchedules(); }
         cronJobs.delete(s.id);
       }, delay);
       cronJobs.set(s.id, { type: 'timeout', handle: timer });
-      // update nextRun
       const idx = schedules.findIndex(x => x.id === s.id);
       if (idx !== -1) { schedules[idx].nextRun = runTime.toISOString(); saveSchedules(); }
     }
   } else if (s.scheduleType === 'cron' && s.cronExpr) {
     if (!cron.validate(s.cronExpr)) return;
-    const job = cron.schedule(s.cronExpr, () => launchPlayer(s));
+    const job = cron.schedule(s.cronExpr, () => launchStream(s));
     cronJobs.set(s.id, { type: 'cron', handle: job });
   }
 }
@@ -413,121 +429,121 @@ function unregisterSchedule(id) {
   cronJobs.delete(id);
 }
 
-async function ensureOBSStreaming() {
-  try {
-    await withOBS(async obs => {
-      const { outputActive } = await obs.call('GetStreamStatus');
-      if (!outputActive) {
-        console.log('[OBS] Not streaming — starting stream...');
-        await obs.call('StartStream');
-        await new Promise(r => setTimeout(r, 3000));
-        console.log('[OBS] Stream started.');
-      }
-    });
-  } catch (e) {
-    console.log('[OBS] Could not connect to OBS WebSocket:', e.message);
+// ─── Relay engine ─────────────────────────────────────────────────────────────
+
+function findFreeSlot(preferred) {
+  const max = Math.max(1, Math.min(5, settings.maxSlots || 2));
+  // Try preferred slot first if valid and free
+  if (preferred && ALL_SLOTS.includes(preferred) && ALL_SLOTS.indexOf(preferred) < max && !relays.has(preferred)) {
+    return preferred;
   }
+  // Fall back to first available slot
+  for (let i = 0; i < max; i++) {
+    if (!relays.has(ALL_SLOTS[i])) return ALL_SLOTS[i];
+  }
+  return null;
 }
 
-// Returns { activeName, inactiveName } for the currently configured OBS source type
-function obsSourceNames() {
-  const isVLC = (settings.obsSourceType || 'media') === 'vlc';
-  return { activeName: isVLC ? 'VLC Video' : 'Media', inactiveName: isVLC ? 'Media' : 'VLC Video' };
-}
+function spawnRelay(slot, s) {
+  const outputUrl = `${settings.srsUrl.replace(/\/$/, '')}/${slot}`;
+  const args = [
+    '-fflags', '+genpts+discardcorrupt',
+    '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+    '-i', s.url,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+    '-g', '60',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-f', 'flv',
+    outputUrl
+  ];
 
-// #11 — shared OBS source setter (supports Media and VLC Video source types)
-async function setOBSMediaSource(obs, url) {
-  const { activeName, inactiveName } = obsSourceNames();
-  const isVLC = activeName === 'VLC Video';
+  let proc;
+  try {
+    proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (e) {
+    console.error(`[Relay] Failed to spawn FFmpeg for ${slot}:`, e.message);
+    return null;
+  }
 
-  await obs.call('SetInputSettings', {
-    inputName:     activeName,
-    inputSettings: isVLC
-      ? { playlist: [{ value: url, hidden: false, selected: false }] }
-      : { input: url, is_local_file: false, looping: false }
+  proc.stderr.on('data', d => {
+    const line = d.toString().split('\n').find(l => /error|failed|rtmp/i.test(l));
+    if (line) console.log(`[Relay:${slot}]`, line.trim());
   });
 
-  // Show active source, hide inactive source in the current scene
-  try {
-    const { currentProgramSceneName } = await obs.call('GetCurrentProgramScene');
-    const { sceneItems }              = await obs.call('GetSceneItemList', { sceneName: currentProgramSceneName });
-    for (const item of sceneItems) {
-      if (item.sourceName === activeName || item.sourceName === inactiveName) {
-        await obs.call('SetSceneItemEnabled', {
-          sceneName:        currentProgramSceneName,
-          sceneItemId:      item.sceneItemId,
-          sceneItemEnabled: item.sourceName === activeName
-        });
-      }
+  proc.on('error', e => console.error(`[Relay:${slot}] FFmpeg error:`, e.message));
+
+  proc.on('exit', (code) => {
+    console.log(`[Relay:${slot}] FFmpeg exited, code: ${code}`);
+    if (code !== 0 && code !== null) {
+      logAutoActivity('error', `Relay ${slot} stopped unexpectedly (exit code ${code})`);
     }
-  } catch (e) {
-    console.warn('[OBS] Could not control source visibility:', e.message);
-  }
+    if (relays.has(slot)) {
+      relays.delete(slot);
+      saveRelays();
+    }
+  });
+
+  return proc;
 }
 
-async function launchPlayer(s) {
-  if (nowPlaying?.url === s.url && !nowPlaying?.stopped) {
-    // Real-time check: only skip if OBS is actually streaming
-    try {
-      const { outputActive } = await withOBS(obs => obs.call('GetStreamStatus'));
-      if (outputActive) return { ok: true }; // genuinely streaming this URL, skip
-      // OBS not streaming — fall through to re-launch
-    } catch {
-      return { ok: false, error: 'Cannot connect to OBS' };
-    }
+function killRelay(slot) {
+  const relay = relays.get(slot);
+  if (!relay) return false;
+  if (relay.proc) {
+    relay.proc.kill('SIGKILL');
+  } else if (relay.pid) {
+    try { process.kill(relay.pid, 'SIGKILL'); } catch {}
   }
-  // Clear stopped flag before launch so the race guard below only catches stops
-  // that happen *during* this launch, not stops from a previous session
-  if (nowPlaying?.stopped) { nowPlaying.stopped = false; }
-  const entry = {
-    id:           uuidv4(),
-    scheduleId:   s.id,
-    scheduleName: s.name,
-    url:          s.url,
-    logo:         s.logo || null,
-    player:       'OBS',
-    startedAt:    new Date().toISOString(),
-    status:       'launched'
-  };
-
-  const logEntry = () => {
-    if (!s.noHistory) {
-      const latest = history[history.length - 1];
-      if (!latest || latest.url !== s.url) {
-        history.push(entry);
-        saveHistory(); // saveHistory() enforces MAX_HISTORY cap
-      }
-    }
-    const idx = schedules.findIndex(x => x.id === s.id);
-    if (idx !== -1) { schedules[idx].lastRun = entry.startedAt; saveSchedules(); }
-  };
-
-  try {
-    await ensureOBSStreaming();
-    await withOBS(obs => setOBSMediaSource(obs, s.url));
-    logEntry();
-    // Only skip if THIS specific stream was stopped mid-launch (race condition guard)
-    if (!(nowPlaying?.url === s.url && nowPlaying?.stopped)) {
-      nowPlaying = { name: s.name, url: s.url, logo: s.logo || null, startedAt: entry.startedAt };
-      saveNowPlaying();
-      pushDashboardEvent('nowplaying', { nowPlaying });
-    }
-    console.log('[OBS] Source updated:', s.url);
-    return { ok: true };
-  } catch (e) {
-    console.error('[OBS] Failed to update media source:', e.message);
-    return { ok: false, error: 'Cannot connect to OBS' };
-  }
+  relays.delete(slot);
+  saveRelays();
+  return true;
 }
 
-// Boot: re-register all enabled schedules
+async function launchStream(s) {
+  const slot = findFreeSlot(s.preferredSlot);
+  if (!slot) {
+    const msg = `No relay slots available (max ${settings.maxSlots || 2})`;
+    logAutoActivity('error', msg);
+    return { ok: false, error: msg };
+  }
+
+  const proc = spawnRelay(slot, s);
+  if (!proc) return { ok: false, error: 'Failed to spawn FFmpeg' };
+
+  const startedAt = new Date().toISOString();
+  relays.set(slot, { slot, name: s.name, url: s.url, logo: s.logo || null, startedAt, pid: proc.pid, proc });
+  saveRelays();
+
+  // Log history after relay is confirmed started
+  if (!s.noHistory) {
+    const latest = history[history.length - 1];
+    if (!latest || latest.url !== s.url) {
+      history.push({
+        id:           uuidv4(),
+        scheduleId:   s.id,
+        scheduleName: s.name,
+        url:          s.url,
+        logo:         s.logo || null,
+        player:       slot,
+        startedAt,
+        status:       'launched'
+      });
+      saveHistory();
+    }
+  }
+
+  const idx = schedules.findIndex(x => x.id === s.id);
+  if (idx !== -1) { schedules[idx].lastRun = startedAt; saveSchedules(); }
+
+  console.log(`[Relay] Spawned ${slot} for ${s.url}`);
+  return { ok: true, slot };
+}
 
 // ── Auto-Scheduler ────────────────────────────────────────────────────────────
-let autoSchedCronJob = null;
-const autoSchedSSEClients = new Set();
-const dashboardSSEClients = new Set();
+let autoSchedCronJob   = null;
+const autoSchedSSEClients  = new Set();
+const dashboardSSEClients  = new Set();
 
-// #9 — shared SSE broadcaster
 function broadcastSSE(clients, data) {
   const msg = `data: ${JSON.stringify(data)}\n\n`;
   clients.forEach(res => res.write(msg));
@@ -545,7 +561,6 @@ function logAutoActivity(type, message) {
   console.log(`[AutoSched] ${message}`);
   broadcastSSE(autoSchedSSEClients, entry);
 }
-
 
 async function refreshM3U() {
   if (!m3uMemCache || !m3uMemCache.sourceUrl) {
@@ -586,17 +601,15 @@ async function runAutoScheduler() {
     }
   }
 
-  // Today's date in Eastern Time (handles EST/EDT)
-  const now = new Date();
+  const now    = new Date();
   const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const yyyy = etDate.getFullYear();
-  const mm   = String(etDate.getMonth() + 1).padStart(2, '0');
-  const dd   = String(etDate.getDate()).padStart(2, '0');
+  const yyyy   = etDate.getFullYear();
+  const mm     = String(etDate.getMonth() + 1).padStart(2, '0');
+  const dd     = String(etDate.getDate()).padStart(2, '0');
   const dateStr = `${yyyy}${mm}${dd}`;
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const friendlyDate = `${monthNames[etDate.getMonth()]} ${etDate.getDate()}`;
 
-  // Fetch scoreboard
   let events;
   try {
     const resp = await axios.get(`${apiEndpoint}?dates=${dateStr}`, { timeout: 10000 });
@@ -606,7 +619,6 @@ async function runAutoScheduler() {
     return;
   }
 
-  // Find games matching search string
   const matches = events.filter(ev => {
     const competitors = ev.competitions?.[0]?.competitors || [];
     return competitors.some(c =>
@@ -623,20 +635,17 @@ async function runAutoScheduler() {
   for (const ev of matches) {
     const gameName = ev.name;
 
-    // Convert game time UTC → Eastern, add 10 min offset
-    const gameUtc  = new Date(ev.date);
-    const gameEt   = new Date(gameUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const gameUtc = new Date(ev.date);
+    const gameEt  = new Date(gameUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     gameEt.setMinutes(gameEt.getMinutes() + 10);
-    const hh   = String(gameEt.getHours()).padStart(2, '0');
-    const min  = String(gameEt.getMinutes()).padStart(2, '0');
+    const hh  = String(gameEt.getHours()).padStart(2, '0');
+    const min = String(gameEt.getMinutes()).padStart(2, '0');
     const runAt = `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 
-    // Search M3U cache for matching channel
     const channels = m3uMemCache.channels || [];
     const search   = searchString.toLowerCase();
     const dateLow  = friendlyDate.toLowerCase();
 
-    // Get opponent team name from ESPN for better matching
     const competitors = ev.competitions?.[0]?.competitors || [];
     const opponent = competitors
       .find(c => !c.team?.displayName?.toLowerCase().includes(searchString.toLowerCase()) &&
@@ -648,12 +657,8 @@ async function runAutoScheduler() {
       return name.includes(search) && name.includes(dateLow);
     });
 
-    // If multiple matches, narrow by opponent name
     if (matching.length > 1 && opponent) {
-      const byOpponent = matching.filter(ch => {
-        const name = (ch.name || '').toLowerCase();
-        return name.includes(opponent);
-      });
+      const byOpponent = matching.filter(ch => ch.name.toLowerCase().includes(opponent));
       if (byOpponent.length > 0) matching = byOpponent;
     }
 
@@ -664,7 +669,6 @@ async function runAutoScheduler() {
 
     const ch = matching[0];
 
-    // Use M3U eventTime if available — more reliable than ESPN API time
     let schedHH = hh, schedMin = min, schedRunAt = runAt;
     if (ch.eventTime) {
       const [datePart, timePart] = ch.eventTime.split('T');
@@ -675,7 +679,6 @@ async function runAutoScheduler() {
       schedRunAt = `${datePart}T${schedHH}:${schedMin}`;
     }
 
-    // Duplicate prevention
     const isDuplicate = schedules.some(s =>
       s.url === ch.url && s.runAt && s.runAt.startsWith(`${yyyy}-${mm}-${dd}`)
     );
@@ -684,17 +687,17 @@ async function runAutoScheduler() {
       continue;
     }
 
-    // Create schedule
     const s = {
-      id:           uuidv4(),
-      name:         ch.name,
-      url:          ch.url,
-      logo:         ch.logo || null,
-      scheduleType: 'once',
-      runAt:        schedRunAt,
-      enabled:      true,
-      createdAt:    new Date().toISOString(),
-      lastRun:      null
+      id:            uuidv4(),
+      name:          ch.name,
+      url:           ch.url,
+      logo:          ch.logo || null,
+      scheduleType:  'once',
+      runAt:         schedRunAt,
+      preferredSlot: autoScheduler.preferredSlot || null,
+      enabled:       true,
+      createdAt:     new Date().toISOString(),
+      lastRun:       null
     };
     schedules.push(s);
     saveSchedules();
@@ -733,7 +736,7 @@ function startM3URefreshCron() {
   console.log(`[M3U] Auto-refresh cron set for ${settings.m3uRefreshTime} daily`);
 }
 
-// #8 — SSE endpoint factory
+// ── SSE ───────────────────────────────────────────────────────────────────────
 function createSSEEndpoint(clientSet) {
   return (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -749,16 +752,14 @@ function createSSEEndpoint(clientSet) {
 app.get('/api/events',                createSSEEndpoint(dashboardSSEClients));
 app.get('/api/auto-scheduler/events', createSSEEndpoint(autoSchedSSEClients));
 
-app.get('/api/auto-scheduler',       (req, res) => res.json(autoScheduler));
+app.get('/api/auto-scheduler', (req, res) => res.json(autoScheduler));
 app.put('/api/auto-scheduler', (req, res) => {
   autoScheduler = { ...autoScheduler, ...req.body, activityLog: autoScheduler.activityLog };
   saveAutoScheduler();
-  // If cron is already running, restart it with the new settings
   if (autoSchedCronJob) startAutoSchedCron();
   res.json(autoScheduler);
 });
 
-// Toggle enable/disable — this is what actually starts/stops the cron
 app.post('/api/auto-scheduler/enable', (req, res) => {
   autoScheduler.enabled = true;
   saveAutoScheduler();
@@ -769,172 +770,45 @@ app.post('/api/auto-scheduler/enable', (req, res) => {
 app.post('/api/auto-scheduler/disable', (req, res) => {
   autoScheduler.enabled = false;
   saveAutoScheduler();
-  startAutoSchedCron(); // will stop cron since enabled is false
+  startAutoSchedCron();
   res.json({ ok: true, enabled: false });
 });
-app.post('/api/auto-scheduler/run',  async (req, res) => { res.json({ ok: true }); await runAutoScheduler(); });
+
+app.post('/api/auto-scheduler/run', async (req, res) => { res.json({ ok: true }); await runAutoScheduler(); });
+
+// Catch-all: serve index.html for any unmatched route (enables History API navigation)
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// ─── Startup ──────────────────────────────────────────────────────────────────
+// Restore or clean up relay state from previous run
+const prevRelays = readJSON(RELAYS_PATH, []);
+if (prevRelays.length > 0) {
+  let restored = 0;
+  let cleared  = 0;
+  for (const r of prevRelays) {
+    let alive = false;
+    if (r.pid) {
+      try { process.kill(r.pid, 0); alive = true; } catch {}
+    }
+    if (alive) {
+      // Process still running — restore state (no proc handle, use pid for kill)
+      relays.set(r.slot, { ...r, proc: null });
+      restored++;
+    } else {
+      cleared++;
+    }
+  }
+  if (restored > 0) console.log(`[Relay] Restored ${restored} active relay(s) from previous session`);
+  if (cleared  > 0) console.log(`[Relay] Cleared ${cleared} stale relay(s) from previous session`);
+  writeJSON(RELAYS_PATH, getRelayStates());
+}
 
 schedules.forEach(registerSchedule);
 startAutoSchedCron();
 startM3URefreshCron();
 
-// ── OBS WebSocket ─────────────────────────────────────────────────────────────
-const OBS_PORT = 4455;
-
-async function withOBS(fn) {
-  const obs = new OBSWebSocket();
-  await obs.connect(`ws://localhost:${OBS_PORT}`);
-  try { return await fn(obs); } finally { obs.disconnect(); }
-}
-
-app.get('/api/obs/rtmp-url', async (req, res) => {
-  try {
-    const url = await withOBS(async obs => {
-      const { streamServiceSettings } = await obs.call('GetStreamServiceSettings');
-      const { server, key } = streamServiceSettings;
-      if (!server || !key) return null;
-      return `${server.replace(/\/$/, '')}/${key}`;
-    });
-    res.json({ url });
-  } catch (e) {
-    res.json({ url: null });
-  }
-});
-
-app.get('/api/obs/status', async (req, res) => {
-  try {
-    const { outputActive } = await withOBS(obs => obs.call('GetStreamStatus'));
-    const np = nowPlaying || (history.length > 0 ? {
-      name:      history[history.length - 1].scheduleName,
-      url:       history[history.length - 1].url,
-      logo:      history[history.length - 1].logo || null,
-      startedAt: history[history.length - 1].startedAt,
-    } : null);
-    res.json({ ok: true, streaming: outputActive, nowPlaying: np });
-  } catch (e) {
-    res.json({ ok: false, streaming: false, error: e.message });
-  }
-});
-
-app.post('/api/obs/stream/start', async (req, res) => {
-  try {
-    await withOBS(async obs => {
-      const lastHistory = history.length > 0 ? history[history.length - 1] : null;
-      const url  = (nowPlaying && nowPlaying.url)  || (lastHistory ? lastHistory.url  : null);
-      const name = (nowPlaying && nowPlaying.name) || (lastHistory ? lastHistory.scheduleName : 'Unknown');
-      if (url) {
-        await setOBSMediaSource(obs, url);
-        const logo = (m3uMemCache?.channels || []).find(c => c.url === url)?.logo || null;
-        if (nowPlaying?.url !== url) {
-          const entry = { id: uuidv4(), scheduleId: null, scheduleName: name, url, logo, player: 'OBS', startedAt: new Date().toISOString(), status: 'launched' };
-          history.push(entry);
-          saveHistory(); // saveHistory() enforces MAX_HISTORY cap
-          nowPlaying = { name, url, logo, startedAt: entry.startedAt };
-          saveNowPlaying();
-        }
-      }
-      const { outputActive } = await obs.call('GetStreamStatus');
-      if (!outputActive) await obs.call('StartStream');
-    });
-    pushDashboardEvent('nowplaying', { nowPlaying });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.post('/api/obs/stream/stop', async (req, res) => {
-  try {
-    await withOBS(async obs => {
-      await obs.call('StopStream');
-      const { activeName } = obsSourceNames();
-      const isVLC = activeName === 'VLC Video';
-      await obs.call('TriggerMediaInputAction', {
-        inputName:   activeName,
-        mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP'
-      });
-      await obs.call('SetInputSettings', {
-        inputName:     activeName,
-        inputSettings: isVLC ? { playlist: [] } : { input: '', is_local_file: false, looping: false }
-      });
-    });
-    // Keep nowPlaying data but mark as stopped so Start knows the URL
-    if (nowPlaying) { nowPlaying.stopped = true; saveNowPlaying(); }
-    pushDashboardEvent('nowplaying', { nowPlaying });
-    pushDashboardEvent('history');
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-
-// ── Stream Preview (WebSocket — per-client FFmpeg) ────────────────────────────
-const FFMPEG  = path.join(__dirname, 'bin', 'ffmpeg.exe');
-
-let   previewClients = new Set();
-
-function spawnFFmpegForClient(ws) {
-  const rtmpUrl = settings.rtmpUrl;
-  if (!rtmpUrl) { ws.close(1008, 'No RTMP URL configured'); return null; }
-  const args = [
-    '-i', rtmpUrl,
-    '-c:v', 'copy',
-    '-c:a', 'aac', '-b:a', '128k',
-    '-f', 'mp4',
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-    '-frag_duration', '500000',
-    'pipe:1'
-  ];
-  let proc;
-  try { proc = spawn(FFMPEG, args, { stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch(e) { console.error('[Preview] Failed to spawn FFmpeg:', e.message); return null; }
-
-  proc.stdout.on('data', chunk => {
-    try { if (ws.readyState === 1) ws.send(chunk); }
-    catch(e) { proc.kill('SIGKILL'); }
-  });
-  proc.stderr.on('data', d => {
-    const line = d.toString().split('\n').find(l => /error|rtmp|failed/i.test(l));
-    if (line) console.log('[FFmpeg preview]', line.trim());
-  });
-  proc.on('error', e => console.error('[Preview] FFmpeg error:', e.message));
-  proc.on('exit', code => { ws.ffmpegProc = null; console.log('[Preview] FFmpeg exited, code:', code); });
-  return proc;
-}
-
-app.get('/api/preview/status', (req, res) => { res.json({ running: previewClients.size > 0 }); });
-
-// Catch-all: serve index.html for any unmatched route (enables History API navigation)
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
 // ─── Start ────────────────────────────────────────────────────────────────────
 const server = require('http').createServer(app);
-
-// WebSocket server for MPEG-TS preview stream
-const wss = new WebSocketServer({ server, path: '/ws/preview' });
-wss.on('connection', ws => {
-  ws.ffmpegProc = null;
-  previewClients.add(ws);
-  console.log('[Preview] Client connected, total:', previewClients.size);
-
-  ws.on('message', msg => {
-    if (msg.toString() === 'start') {
-      if (!ws.ffmpegProc) {
-        ws.ffmpegProc = spawnFFmpegForClient(ws);
-      }
-    } else if (msg.toString() === 'stop') {
-      if (ws.ffmpegProc) { ws.ffmpegProc.kill('SIGKILL'); ws.ffmpegProc = null; }
-    }
-  });
-
-  ws.on('close', () => {
-    if (ws.ffmpegProc) { ws.ffmpegProc.kill('SIGKILL'); ws.ffmpegProc = null; }
-    previewClients.delete(ws);
-    console.log('[Preview] Client disconnected, total:', previewClients.size);
-  });
-});
-
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n✓ Stream Scheduler running at http://0.0.0.0:${PORT}`);

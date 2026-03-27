@@ -1,22 +1,24 @@
 # StreamSched
 
-> A self-hosted web app to schedule IPTV / stream URLs for playback via OBS Studio.
+> A self-hosted web app to schedule IPTV / stream URLs for relay via FFmpeg and SRS.
 
-StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream Codes provider — to play automatically in OBS at a specific time, on a recurring schedule, or instantly on demand. It includes an auto-scheduler that can pull live sports events from an API and schedule them automatically.
+StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream Codes provider — to relay automatically via FFmpeg to an SRS (Simple Realtime Server) instance at a specific time, on a recurring schedule, or instantly on demand. It supports up to 5 simultaneous relay slots, in-browser HLS preview per stream, and an auto-scheduler that can pull live sports events from an API and schedule them automatically.
 
 ---
 
 ## Features
 
 - **M3U & Xtream Codes** — fetch and search channels from any M3U URL or Xtream Codes provider
-- **One-time schedules** — play a stream at a specific date and time, fires once then removes itself
+- **One-time schedules** — relay a stream at a specific date and time, fires once then removes itself
 - **Recurring schedules** — use standard cron expressions for daily, weekly, or custom intervals
-- **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string
-- **OBS integration** — streams launch directly in OBS via WebSocket, supporting both Media and VLC Video source types
-- **Live preview** — real-time stream preview in the browser via FFmpeg + Media Source Extensions
+- **Multi-stream relay** — up to 5 simultaneous FFmpeg relay slots (`stream01`–`stream05`), configurable in Settings
+- **Preferred relay slot** — optionally pin a schedule or the auto-scheduler to a specific slot
+- **In-browser HLS preview** — watch any active relay directly in the dashboard via hls.js
+- **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string; supports a default relay slot
+- **Stream survival** — FFmpeg relay processes survive a Node.js restart; live PIDs are re-adopted on boot
 - **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
 - **Playback history** — log of every stream launched with timestamps and status
-- **Activity log** — tracks auto-scheduler activity, M3U refreshes, schedule changes and service restarts
+- **Activity log** — tracks auto-scheduler activity, M3U refreshes, and relay errors
 - **Password protected** — login required, session-based auth
 - **LAN accessible** — binds to `0.0.0.0` so any device on your network can reach it
 
@@ -25,8 +27,8 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) v18 or later
-- [OBS Studio](https://obsproject.com/) v28 or later (WebSocket server is built-in)
-- [FFmpeg](https://ffmpeg.org/) — required for live stream preview only
+- [FFmpeg](https://ffmpeg.org/) — place `ffmpeg.exe` in the `bin/` folder
+- [SRS (Simple Realtime Server)](https://ossrs.net/) — receives RTMP from FFmpeg and serves HLS
 
 ---
 
@@ -40,7 +42,17 @@ Open a terminal in the `StreamSched` folder:
 npm install
 ```
 
-### 2. Run setup (first time only)
+### 2. Place FFmpeg
+
+Download a Windows FFmpeg build and place `ffmpeg.exe` in the `bin/` folder:
+
+```
+StreamSched/
+  bin/
+    ffmpeg.exe
+```
+
+### 3. Run setup (first time only)
 
 ```bash
 node setup.js
@@ -53,18 +65,18 @@ You will be prompted to enter:
 
 This creates `data/config.json` with your hashed credentials.
 
-### 3. Configure OBS
+### 4. Configure SRS
 
-In OBS Studio:
-1. Go to **Tools → WebSocket Server Settings**
-2. Enable the WebSocket server
-3. Set the port (default: `4455`)
-4. Set a password if desired (match it in StreamSched Settings)
-5. Add one or both sources to your scene — a **Media Source** named exactly `Media`, a **VLC Video Source** named exactly `VLC Video`, or both. StreamSched will automatically show the active source and hide the other when a stream plays
-6. In StreamSched **Settings → OBS Source**, select which source type you are using
-7. If you want to use the live preview, go to **Settings → OBS Source** — the **RTMP Preview URL** will be auto-detected from OBS by default. You can disable **Auto-detect RTMP from OBS** and enter the URL manually if needed (e.g. `rtmp://127.0.0.1/live/stream`)
+StreamSched pushes RTMP to SRS and reads HLS back. Two URLs need to be set in **Settings → Stream Relay**:
 
-### 4. Start the server
+| Setting | Description | Example |
+|---------|-------------|---------|
+| **SRS RTMP URL** | RTMP ingest endpoint used by FFmpeg (LAN IP) | `rtmp://192.168.1.125/live` |
+| **SRS Watch URL** | HTTPS base URL for HLS playback (your domain/proxy) | `https://stream.example.com/live` |
+
+HLS for each slot is served at `{SRS Watch URL}/{slot}.m3u8` — e.g. `https://stream.example.com/live/stream01.m3u8`.
+
+### 5. Start the server
 
 ```bash
 node server.js
@@ -93,13 +105,21 @@ http://192.168.1.x:3000
 
 1. Type in the **Channel Search** box to filter your channel list
 2. Click or tap any channel to open the scheduling modal:
-   - **Now** — plays immediately in OBS
+   - **Now** — relays immediately to the next free slot
    - **Once** — pick a date and time
    - **Recurring** — enter a cron expression
+3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto)
+
+### Active Relays (Dashboard)
+
+- Each active relay appears as a card showing channel logo, stream name, start time, and slot
+- **👁 Preview** — shows a live HLS video preview directly in the dashboard
+- **■ Stop** — terminates the FFmpeg relay for that slot
 
 ### Managing Schedules (Dashboard)
 
 - **Run Now** — trigger any schedule immediately
+- **Edit** — update name, time, relay slot, or recurrence
 - **Delete** — remove a schedule
 - Recurring schedules show their last run time
 - One-time schedules remove themselves after firing
@@ -130,16 +150,30 @@ The Auto-Scheduler queries a sports API on a daily schedule and automatically cr
 
 1. Set a **Search String** (e.g. `Texas Tech`) to match against API results
 2. Set an **API Endpoint** — defaults to the ESPN college baseball scoreboard
-3. Set a **Check Time** — the time of day the scheduler will run
-4. Optionally enable **Refresh M3U before running** to ensure channels are up to date
-5. Toggle **Auto-Scheduler** on to activate
+3. Set a **Check Time** — the time of day the scheduler will run (Eastern timezone)
+4. Set a **Default Relay Slot** — optionally pin auto-created schedules to a specific relay slot
+5. Optionally enable **Refresh M3U before running** to ensure channels are up to date
+6. Toggle **Auto-Scheduler** on to activate
 
-Matched events are scheduled 10 minutes before their listed start time.
+Matched events are scheduled 10 minutes before their listed start time. If the channel name includes an embedded event time, that is used instead of the API time.
 
-### Now Playing & Recent Activity (Dashboard)
+### Recent Activity (Dashboard)
 
-- **Now Playing** shows the currently active stream with channel logo, name, and start time
-- **Recent Activity** shows the last 5 streams played — click or tap any entry to replay it instantly
+- Shows the last 5 streams launched — click or tap any entry to replay it instantly
+
+---
+
+## Relay Slots
+
+StreamSched supports up to 5 simultaneous FFmpeg relay slots. Configure how many are available in **Settings → Max Simultaneous Streams** (1–5, default 2).
+
+Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS. When a stream is launched:
+
+1. If a **Preferred Slot** is set and that slot is free, it is used
+2. Otherwise the first available slot is auto-assigned
+3. If all slots are full, the launch is rejected and logged to the Activity Log
+
+FFmpeg relay processes run independently of the Node.js server. If the server restarts, any still-running FFmpeg processes are automatically re-adopted — streams are not interrupted.
 
 ---
 
@@ -153,7 +187,6 @@ nssm install StreamSched node server.js
 
 Then in the NSSM GUI:
 - Set **Startup directory** to the `StreamSched` folder
-- Set the **Log on** account to your Windows user account (required for OBS WebSocket access)
 
 The server will start silently at boot and restart automatically on failure.
 
@@ -163,15 +196,15 @@ The server will start silently at boot and restart automatically on failure.
 
 All data is stored in the `data/` directory:
 
-| File                 | Contents                                        |
-|----------------------|-------------------------------------------------|
-| `config.json`        | Port, username, hashed password                 |
-| `schedules.json`     | All saved schedules                             |
-| `history.json`       | Playback log (last 10 entries)                  |
-| `now_playing.json`   | Currently playing stream (persisted on restart) |
-| `settings.json`      | OBS connection, M3U refresh, RTMP preview URL   |
-| `auto_scheduler.json`| Auto-scheduler config and activity log          |
-| `m3u_cache.json`     | Cached channel list from last M3U fetch         |
+| File                  | Contents                                          |
+|-----------------------|---------------------------------------------------|
+| `config.json`         | Port, username, hashed password                   |
+| `schedules.json`      | All saved schedules (includes `preferredSlot`)    |
+| `history.json`        | Playback log (last 10 entries)                    |
+| `relays.json`         | Active relay state — slot, name, pid (persisted across restarts) |
+| `settings.json`       | SRS URLs, max slots, M3U refresh settings         |
+| `auto_scheduler.json` | Auto-scheduler config, default slot, activity log |
+| `m3u_cache.json`      | Cached channel list from last M3U fetch           |
 
 ---
 

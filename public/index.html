@@ -227,8 +227,9 @@
     .toggle-knob   { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); opacity: .5; position: absolute; top: 1px; left: 1px; transition: left .2s, opacity .2s; }
     .toggle-switch.toggle-on { background: rgba(0,229,160,.12); }
     .toggle-switch.toggle-on .toggle-knob { left: 17px; opacity: 1; }
-    #obs-source-toggle { background: rgba(0,229,160,.12); }
-    #obs-source-toggle .toggle-knob { opacity: 1; }
+    .tag-slot { background: rgba(0,119,255,.15); color: var(--accent2); }
+    .relay-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+    #relay-list { display: flex; flex-direction: column; gap: 8px; }
 
     /* ── Status label ── */
     .status-label { font-size: 11px; color: var(--muted); }
@@ -476,7 +477,6 @@
 
       /* M3U search row: wrap */
 
-      #preview-video { height: 200px !important; }
     }
 
     /* ── Tablet (641–900px) ── */
@@ -489,10 +489,8 @@
 
     #now-playing-info { margin-top: 12px; }
     .np-header { align-items: flex-end; }
-    .np-sep { margin-top: 16px; }
-    .np-activity-header { margin-top: 16px; }
     .no-stream-active { font-size:12px; color:var(--muted); }
-    .tag-muted { background:rgba(90,96,112,.1); color:var(--muted); }
+    .tag-time { background:rgba(90,96,112,.1); color:var(--muted); }
     .sched-btn-stop   { background: rgba(255,76,106,.12); color: var(--danger);  border-color: rgba(255,76,106,.25); }
     .sched-btn-active { background: rgba(0,229,160,.25); color: var(--accent);  border-color: rgba(0,229,160,.5); }
 
@@ -562,25 +560,16 @@
         </div>
 
         <div class="card">
-          <div class="card-header np-header">
-            <div class="card-title">🎥 Now Playing</div>
-            <div class="np-header-actions">
-              <button class="sched-btn" id="preview-toggle-btn" type="button" title="Show/Hide Preview">👁</button>
-              <button class="sched-btn sched-btn-stop" id="stream-toggle-btn" type="button" title="Stop stream" disabled>■</button>
-            </div>
+          <div class="card-header">
+            <div class="card-title">📡 Active Relays</div>
           </div>
-          <!-- Stream info -->
-          <div id="now-playing-info" class="media-row">
-            <span class="no-stream-active">// no stream active</span>
+          <div id="relay-list">
+            <span class="no-stream-active">// no active relays</span>
           </div>
+        </div>
 
-          <div id="preview-wrap" style="display:none;margin-top:12px;line-height:0">
-            <video id="preview-video" controls muted playsinline style="width:100%;border-radius:8px;background:#000;height:360px;object-fit:contain;display:block"></video>
-          </div>
-
-          <div class="sep np-sep"></div>
-
-          <div class="card-header np-activity-header">
+        <div class="card">
+          <div class="card-header">
             <div class="card-title">🕐 Recent Activity</div>
           </div>
           <div id="recent-history"></div>
@@ -645,25 +634,27 @@
         </div>
 
         <div class="card">
-          <div class="card-header"><div class="card-title">📺 OBS Source</div></div>
-          <div class="flex gap-8 align-center">
-            <span class="setting-text">Media</span>
-            <div id="obs-source-toggle" class="toggle-switch">
-              <div class="toggle-knob"></div>
-            </div>
-            <span class="setting-text">VLC Video</span>
-          </div>
-          <div class="help mt-8">The source must be named <strong>Media</strong> or <strong>VLC Video</strong> in OBS.</div>
-          <div class="flex gap-8 mt-16 align-center">
-            <span class="setting-text">Auto-detect RTMP from OBS</span>
-            <div id="rtmp-autodetect-toggle" class="toggle-switch">
-              <div class="toggle-knob"></div>
-            </div>
+          <div class="card-header"><div class="card-title">📡 SRS Relay Server</div></div>
+          <div class="field">
+            <label class="lbl">RTMP Input URL</label>
+            <input type="text" id="srs-url" placeholder="e.g. rtmp://192.168.1.125/live"/>
+            <div class="help mt-4">The RTMP URL where FFmpeg pushes relayed streams to SRS.</div>
           </div>
           <div class="field mt-12">
-            <label class="lbl">RTMP Preview URL</label>
-            <input type="text" id="rtmp-url" placeholder="e.g. rtmp://127.0.0.1/live/stream"/>
-            <div class="help mt-4">The RTMP URL StreamSched will read from for the live preview.</div>
+            <label class="lbl">Watch Base URL</label>
+            <input type="text" id="srs-watch-url" placeholder="e.g. https://stream.ipnoze.com/live"/>
+            <div class="help mt-4">The base HTTP URL used to generate Watch links (HLS).</div>
+          </div>
+          <div class="field mt-12">
+            <label class="lbl">Max Simultaneous Streams</label>
+            <select id="max-slots">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+            <div class="help mt-4">Number of streams that can relay simultaneously.</div>
           </div>
         </div>
 
@@ -684,6 +675,10 @@
             <div class="field">
               <label class="lbl">Daily Check Time (Eastern)</label>
               <input type="time" id="as-time"/>
+            </div>
+            <div class="field">
+              <label class="lbl">Default Relay Slot</label>
+              <select id="as-slot"></select>
             </div>
           </div>
           <div class="field mt-16">
@@ -766,6 +761,11 @@
         <input type="text" id="sm-cron" name="sm-cron" placeholder="0 20 * * 1-5  (weekdays at 8 PM)" />
         <div class="help">Standard 5-field cron: min hour day month weekday</div>
       </div>
+      <div class="field">
+        <label class="lbl">Relay Slot</label>
+        <select id="sm-slot"></select>
+        <div class="help mt-4">Auto assigns the first available slot.</div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="sched-modal-cancel" type="button">Cancel</button>
@@ -803,6 +803,11 @@
       <div class="field" id="am-cron-wrap" style="display:none">
         <label class="lbl">Cron Expression</label>
         <input type="text" id="am-cron" name="am-cron" placeholder="0 20 * * 1-5" />
+      </div>
+      <div class="field">
+        <label class="lbl">Relay Slot</label>
+        <select id="am-slot"></select>
+        <div class="help mt-4">Auto assigns the first available slot.</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -921,11 +926,11 @@ function makeSchedItem(s) {
       <div class="item-name">${esc(sTitle || s.name)}</div>
       <div class="item-url">${esc(s.url)}</div>
       <div class="item-meta">
-        ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-muted">${fmtDt(s.runAt)}</span>`:''}
-        ${s.scheduleType==='cron'?`<span class="item-tag tag-muted">${esc(s.cronExpr||'')}</span>`:''}
+        ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-time">${fmtDt(s.runAt)}</span>`:''}
+        ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(s.cronExpr||'')}</span>`:''}
         ${channelTag(sChannel)}
         <span class="item-tag ${s.scheduleType==='cron'?'tag-cron':'tag-once'}">${s.scheduleType==='cron'?'RECURRING':'ONE-TIME'}</span>
-        ${s.lastRun?`<span class="item-tag tag-muted">Last: ${fmtDt(s.lastRun)}</span>`:''}
+        ${s.lastRun?`<span class="item-tag tag-time">Last: ${fmtDt(s.lastRun)}</span>`:''}
       </div>
     </div>
     <div class="sched-actions">
@@ -947,7 +952,7 @@ async function runNow(id) {
   const s = schedules.find(s => s.id === id);
   if (!s) return;
   const r = await POST('/api/play-now', { name: s.name, url: s.url, logo: s.logo || null });
-  r.ok ? toast('▶ Player launched!') : toast(r.error || 'Cannot connect to OBS', 'error');
+  r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
   if (r.ok && s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
   await loadHistory();
   renderDashboard();
@@ -972,6 +977,7 @@ function openNewModal() {
   document.getElementById('sm-url').value    = '';
   document.getElementById('sm-type').value   = 'now';
   document.getElementById('sm-runat').value  = localDateTimeValue();
+  populateSlotDropdown('sm-slot');
   document.getElementById('sm-cron').value   = '';
   toggleTypeFields('sm', 'now');
   showModal('sched-modal');
@@ -988,6 +994,7 @@ function openEditModal(id) {
   document.getElementById('sm-runat').value  = s.runAt ? s.runAt.slice(0,16) : '';
   document.getElementById('sm-cron').value   = s.cronExpr || '';
   toggleTypeFields('sm', s.scheduleType);
+  populateSlotDropdown('sm-slot', s.preferredSlot);
   showModal('sched-modal');
 }
 
@@ -999,13 +1006,29 @@ document.getElementById('sm-type').addEventListener('change', e => toggleTypeFie
 
 document.getElementById('sched-modal-cancel').addEventListener('click', () => hideModal('sched-modal'));
 // #5 — shared schedule payload builder
+function populateSlotDropdown(id, selectedSlot) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const max = parseInt(document.getElementById('max-slots')?.value || '5');
+  sel.innerHTML = '<option value="">Auto</option>';
+  for (let i = 0; i < Math.max(1, Math.min(5, max)); i++) {
+    const slot = `stream0${i + 1}`;
+    const opt  = document.createElement('option');
+    opt.value  = slot;
+    opt.textContent = slot;
+    if (slot === selectedSlot) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
 function buildSchedulePayload(prefix, url) {
   return {
-    name:         document.getElementById(`${prefix}-name`).value || 'Untitled',
+    name:          document.getElementById(`${prefix}-name`).value || 'Untitled',
     url,
-    scheduleType: document.getElementById(`${prefix}-type`).value,
-    runAt:        document.getElementById(`${prefix}-runat`).value || null,
-    cronExpr:     document.getElementById(`${prefix}-cron`).value.trim() || null,
+    scheduleType:  document.getElementById(`${prefix}-type`).value,
+    runAt:         document.getElementById(`${prefix}-runat`).value || null,
+    cronExpr:      document.getElementById(`${prefix}-cron`).value.trim() || null,
+    preferredSlot: document.getElementById(`${prefix}-slot`)?.value || null,
   };
 }
 
@@ -1015,8 +1038,8 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
   const body = buildSchedulePayload('sm', url);
   if (body.scheduleType === 'now') {
     hideModal('sched-modal');
-    const r = await POST('/api/play-now', { name: body.name, url });
-    r.ok ? toast('▶ Playing now!') : toast(r.error || 'Cannot connect to OBS', 'error');
+    const r = await POST('/api/play-now', { name: body.name, url, preferredSlot: body.preferredSlot });
+    r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
     return;
   }
   if (editingId) {
@@ -1049,12 +1072,6 @@ async function renderDashboard() {
 async function loadHistory() {
   history = await GET('/api/history');
   renderDashboard();
-  // Sync Now Playing from history only when not streaming (SSE handles it when streaming)
-  if (!obsStreaming && history.length > 0) {
-    const h = history[0];
-    nowPlayingData = { name: h.scheduleName, url: h.url, logo: h.logo || null, startedAt: h.startedAt };
-    updateNowPlaying(false, nowPlayingData);
-  }
 }
 
 function makeHistoryItem(h) {
@@ -1067,7 +1084,7 @@ function makeHistoryItem(h) {
       <div class="item-name">${esc(hTitle || h.scheduleName || 'Unknown')}</div>
       ${h.url ? `<div class="item-url">${esc(h.url)}</div>` : ''}
       <div class="item-meta">
-        <span class="item-tag tag-muted">${fmtDt(h.startedAt)}</span>
+        <span class="item-tag tag-time">${fmtDt(h.startedAt)}</span>
         ${channelTag(hChannel)}
       </div>
     </div>`;
@@ -1075,7 +1092,7 @@ function makeHistoryItem(h) {
     div.addEventListener('click', async () => {
       div.style.pointerEvents = 'none';
       const r = await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
-      r.ok ? toast('▶ Launching…') : toast(r.error || 'Cannot connect to OBS', 'error');
+      r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
       div.style.pointerEvents = '';
     });
   }
@@ -1172,21 +1189,9 @@ async function loadCacheInfo() {
     m3uRefreshEnabled = settingsRes.m3uAutoRefresh || false;
     document.getElementById('m3u-refresh-time').value = settingsRes.m3uRefreshTime || '06:00';
     updateM3URefreshToggle();
-    setToggleState('obs-source-toggle', (settingsRes.obsSourceType || 'media') === 'vlc');
-    const rtmpAutoDetect = settingsRes.rtmpAutoDetect !== false;
-    setToggleState('rtmp-autodetect-toggle', rtmpAutoDetect);
-    document.getElementById('rtmp-url').disabled = rtmpAutoDetect;
-    document.getElementById('rtmp-url').value = settingsRes.rtmpUrl || '';
-    if (rtmpAutoDetect && !settingsRes.rtmpUrl) {
-      try {
-        const { url } = await GET('/api/obs/rtmp-url');
-        if (url) {
-          document.getElementById('rtmp-url').value = url;
-          await PUT('/api/settings', { rtmpUrl: url });
-          updateNowPlaying(obsStreaming, nowPlayingData);
-        }
-      } catch {}
-    }
+    document.getElementById('srs-url').value       = settingsRes.srsUrl      || '';
+    document.getElementById('srs-watch-url').value = settingsRes.srsWatchUrl || '';
+    document.getElementById('max-slots').value      = String(settingsRes.maxSlots ?? 2);
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1297,28 +1302,17 @@ document.getElementById('m3u-refresh-time').addEventListener('input', debounce(a
   toast('Refresh time saved');
 }, 2000));
 
-document.getElementById('obs-source-toggle').addEventListener('click', async () => {
-  const isVLC = !document.getElementById('obs-source-toggle').classList.contains('toggle-on');
-  setToggleState('obs-source-toggle', isVLC);
-  await PUT('/api/settings', { obsSourceType: isVLC ? 'vlc' : 'media' });
-  toast(isVLC ? 'OBS source set to VLC Video' : 'OBS source set to Media');
-});
-
-document.getElementById('rtmp-autodetect-toggle').addEventListener('click', async () => {
-  const enabled = !document.getElementById('rtmp-autodetect-toggle').classList.contains('toggle-on');
-  setToggleState('rtmp-autodetect-toggle', enabled);
-  document.getElementById('rtmp-url').disabled = enabled;
-  await PUT('/api/settings', { rtmpAutoDetect: enabled });
-  toast(enabled ? 'RTMP auto-detect enabled' : 'RTMP auto-detect disabled');
-});
-
-const saveRtmpUrl = debounce(async () => {
-  await PUT('/api/settings', { rtmpUrl: document.getElementById('rtmp-url').value.trim() });
-  toast('RTMP URL saved');
-}, 1500);
-document.getElementById('rtmp-url').addEventListener('input', () => {
-  saveRtmpUrl();
-  updateNowPlaying(obsStreaming, nowPlayingData);
+document.getElementById('srs-url').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { srsUrl: document.getElementById('srs-url').value.trim() });
+  toast('SRS URL saved');
+}, 1500));
+document.getElementById('srs-watch-url').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { srsWatchUrl: document.getElementById('srs-watch-url').value.trim() });
+  toast('Watch URL saved');
+}, 1500));
+document.getElementById('max-slots').addEventListener('change', async () => {
+  await PUT('/api/settings', { maxSlots: parseInt(document.getElementById('max-slots').value) || 2 });
+  toast('Max streams saved');
 });
 
 // Search
@@ -1378,7 +1372,7 @@ function renderChannels(channels, count, total) {
       <div class="item-info">
         <div class="item-name">${esc(chTitle || ch.name)}</div>
         <div class="item-url">${esc(ch.url)}</div>
-        ${(chChannel || ch.eventTime) ? `<div class="item-meta">${ch.eventTime ? `<span class="item-tag tag-muted">${fmtDt(ch.eventTime)}</span>` : ''}${channelTag(chChannel)}</div>` : ''}
+        ${(chChannel || ch.eventTime) ? `<div class="item-meta">${ch.eventTime ? `<span class="item-tag tag-time">${fmtDt(ch.eventTime)}</span>` : ''}${channelTag(chChannel)}</div>` : ''}
       </div>`;
     div.addEventListener('click', () => openAddModal(ch));
     list.appendChild(div);
@@ -1430,6 +1424,7 @@ function openAddModal(ch) {
     toggleTypeFields('am', 'now');
   }
   document.getElementById('am-cron').value   = '';
+  populateSlotDropdown('am-slot');
   showModal('add-modal');
 }
 document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
@@ -1440,8 +1435,8 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   if (body.scheduleType === 'now') {
     const logo = document.getElementById('am-logo').value || null;
     hideModal('add-modal');
-    const r = await POST('/api/play-now', { name: body.name, url, logo });
-    r.ok ? toast('▶ Playing now!') : toast(r.error || 'Cannot connect to OBS', 'error');
+    const r = await POST('/api/play-now', { name: body.name, url, logo, preferredSlot: body.preferredSlot });
+    r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
     return;
   }
   await POST('/api/schedules', body);
@@ -1492,71 +1487,92 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
    Auth
 ═══════════════════════════════════════════ */
 
-// ── Now Playing ──────────────────────────────────────────────────────────────
-let obsStreaming = false;
-let nowPlayingData = null;
+// ── Active Relays ─────────────────────────────────────────────────────────────
+let relayData = [];
+const hlsInstances = new Map();
 
-function updateNowPlaying(streaming, np) {
-  obsStreaming    = streaming;
-  nowPlayingData  = np;
-
-  // Update stream toggle button — always a stop button, red only when streaming
-  const streamBtn = document.getElementById('stream-toggle-btn');
-  streamBtn.className = 'sched-btn sched-btn-stop';
-  streamBtn.disabled  = !streaming;
-
-  // Update preview toggle button — disabled when not streaming or no RTMP URL configured
-  const previewBtn = document.getElementById('preview-toggle-btn');
-  const hasRtmp = !!document.getElementById('rtmp-url').value.trim();
-  previewBtn.disabled = !streaming || !hasRtmp;
-  previewBtn.className = previewVisible && streaming && hasRtmp ? 'sched-btn sched-btn-active' : 'sched-btn';
-
-  // Update now playing info — only show when streaming
-  const info = document.getElementById('now-playing-info');
-  if (streaming && np && np.name) {
-    const time = fmtDt(np.startedAt);
-    const { channel: npChannel, title: npTitle } = parseName(np.name);
-    info.innerHTML =
-      logoImg(np.logo) +
-      `<div class="item-info">
-        <div class="item-name">${esc(npTitle || np.name)}</div>
-        ${np.url ? `<div class="item-url">${esc(np.url)}</div>` : ''}
+function makeRelayCard(relay) {
+  const wrap = document.createElement('div');
+  wrap.dataset.slot = relay.slot;
+  const { channel, title } = parseName(relay.name);
+  const watchUrl = `${(document.getElementById('srs-watch-url')?.value || '').replace(/\/$/, '')}/${relay.slot}.m3u8`;
+  wrap.innerHTML = `
+    <div class="media-row">
+      ${logoImg(relay.logo)}
+      <div class="item-info">
+        <div class="item-name">${esc(title || relay.name)}</div>
+        ${relay.url ? `<div class="item-url">${esc(relay.url)}</div>` : ''}
         <div class="item-meta">
-          <span class="item-tag tag-muted">${time}</span>
-          ${channelTag(npChannel)}
+          <span class="item-tag tag-time">${fmtDt(relay.startedAt)}</span>
+          <span class="item-tag tag-slot">${esc(relay.slot)}</span>
+          ${channelTag(channel)}
         </div>
-      </div>`;
+      </div>
+      <div class="np-header-actions">
+        <button class="sched-btn" data-preview="${esc(relay.slot)}" title="Show/Hide Preview">👁</button>
+        <button class="sched-btn sched-btn-stop" data-stop="${esc(relay.slot)}" title="Stop relay">■</button>
+      </div>
+    </div>
+    <div class="preview-wrap" data-preview-wrap="${esc(relay.slot)}" style="display:none;margin-top:12px;line-height:0">
+      <video controls muted playsinline style="width:100%;border-radius:8px;background:#000;height:360px;object-fit:contain;display:block"></video>
+    </div>`;
+  wrap.querySelector(`[data-preview="${relay.slot}"]`).addEventListener('click', () => toggleRelayPreview(relay.slot, watchUrl));
+  wrap.querySelector(`[data-stop="${relay.slot}"]`).addEventListener('click', () => stopRelay(relay.slot));
+  return wrap;
+}
+
+function toggleRelayPreview(slot, watchUrl) {
+  const list  = document.getElementById('relay-list');
+  const wrap  = list?.querySelector(`[data-preview-wrap="${slot}"]`);
+  const btn   = list?.querySelector(`[data-preview="${slot}"]`);
+  const video = wrap?.querySelector('video');
+  if (!wrap || !btn || !video) return;
+
+  const isVisible = wrap.style.display !== 'none';
+  if (isVisible) {
+    wrap.style.display = 'none';
+    btn.className = 'sched-btn';
+    if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
+    video.pause(); video.src = '';
   } else {
-    info.innerHTML = '<span class="no-stream-active">// no stream active</span>';
+    wrap.style.display = '';
+    btn.className = 'sched-btn sched-btn-active';
+    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(watchUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      hlsInstances.set(slot, hls);
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = watchUrl;
+      video.play().catch(() => {});
+    } else {
+      toast('HLS not supported in this browser', 'error');
+    }
   }
 }
 
-// Stream toggle button
-document.getElementById('stream-toggle-btn').addEventListener('click', async () => {
-  const btn = document.getElementById('stream-toggle-btn');
-  btn.disabled = true;
-  try {
-    await POST('/api/obs/stream/stop');
-    obsStreaming = false;
-    updateNowPlaying(false, nowPlayingData);
-    await loadHistory();
-    if (previewVisible) {
-      previewVisible = false;
-      document.getElementById('preview-toggle-btn').className = 'sched-btn';
-      document.getElementById('preview-wrap').style.display = 'none';
-      stopPreview();
-    }
-    toast('Streaming stopped', 'warn');
-  } catch(e) {
-    toast('OBS error: ' + e.message, 'error');
-    btn.disabled = false;
+function renderRelays(relays) {
+  const list = document.getElementById('relay-list');
+  if (!list) return;
+  // Clean up HLS instances for relays that are no longer active
+  const activeSlots = new Set((relays || []).map(r => r.slot));
+  for (const [slot, hls] of hlsInstances) {
+    if (!activeSlots.has(slot)) { hls.destroy(); hlsInstances.delete(slot); }
   }
-});
+  if (!relays || relays.length === 0) {
+    list.innerHTML = '<span class="no-stream-active">// no active relays</span>';
+    return;
+  }
+  list.innerHTML = '';
+  relays.forEach(r => list.appendChild(makeRelayCard(r)));
+}
 
-// Poll OBS status every 500ms until streaming starts (max 15s)
-// Only used after schedule fires — not after manual button click
-// Load initial OBS status
-GET('/api/obs/status').then(r => updateNowPlaying(r.streaming, r.nowPlaying)).catch(() => {});
+async function stopRelay(slot) {
+  if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
+  const r = await POST(`/api/relays/${slot}/stop`, {});
+  if (!r.ok) toast(r.error || 'Failed to stop relay', 'error');
+}
 
 document.getElementById('restartBtn').addEventListener('click', async () => {
   const btn = document.getElementById('restartBtn');
@@ -1599,10 +1615,10 @@ function fmtDt(iso) {
 ═══════════════════════════════════════════ */
 (async () => {
   await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo(), loadAutoScheduler()]);
-  // Sync actual OBS streaming state — loadHistory can't know if stream is live after a refresh
   try {
-    const obs = await GET('/api/obs/status');
-    if (obs.ok) updateNowPlaying(obs.streaming, obs.nowPlaying || nowPlayingData);
+    const r = await GET('/api/relays');
+    relayData = r || [];
+    renderRelays(relayData);
   } catch {}
   // Restore page from URL path, default to dashboard
   const savedPage = location.pathname.replace(/^\//, '') || 'dashboard';
@@ -1630,7 +1646,7 @@ function renderAsLog() {
     return `<div class="media-row">
       <div class="item-info">
         <div class="item-name">${icon} ${esc(e.message)}</div>
-        <div class="item-meta"><span class="item-tag tag-muted">${fmtDt(e.timestamp)}</span></div>
+        <div class="item-meta"><span class="item-tag tag-time">${fmtDt(e.timestamp)}</span></div>
       </div>
     </div>`;
   }).join('') + '</div>';
@@ -1664,10 +1680,10 @@ function makeSSE(url, onMessage) {
   return connect;
 }
 
-const connectDashboardSSE = makeSSE('/api/events', ({ type, nowPlaying }) => {
-  if (type === 'history')    loadHistory();
-  if (type === 'schedule')   loadSchedules();
-  if (type === 'nowplaying') { if (nowPlaying) nowPlayingData = nowPlaying; const active = !nowPlaying?.stopped; obsStreaming = active; updateNowPlaying(active, nowPlayingData); loadHistory(); }
+const connectDashboardSSE = makeSSE('/api/events', ({ type, relays }) => {
+  if (type === 'history')  loadHistory();
+  if (type === 'schedule') loadSchedules();
+  if (type === 'relays')   { relayData = relays || []; renderRelays(relayData); }
 });
 
 const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
@@ -1686,6 +1702,7 @@ async function loadAutoScheduler() {
   document.getElementById('as-search').value   = asData.searchString || '';
   document.getElementById('as-time').value     = asData.checkTime || '';
   document.getElementById('as-endpoint').value = asData.apiEndpoint || '';
+  populateSlotDropdown('as-slot', asData.preferredSlot || '');
   updateAsToggle();
   updateAsRefreshToggle();
   renderAsLog();
@@ -1716,12 +1733,14 @@ const scheduleAsSave = debounce(async () => {
     checkTime:        document.getElementById('as-time').value,
     apiEndpoint:      document.getElementById('as-endpoint').value.trim(),
     refreshBeforeRun: asData.refreshBeforeRun || false,
+    preferredSlot:    document.getElementById('as-slot').value || null,
   });
   toast('Auto-Scheduler saved');
 }, 2000);
 ['as-search', 'as-time', 'as-endpoint'].forEach(id => {
   document.getElementById(id).addEventListener('input', scheduleAsSave);
 });
+document.getElementById('as-slot').addEventListener('change', scheduleAsSave);
 
 document.getElementById('as-run-btn').addEventListener('click', async () => {
   const btn = document.getElementById('as-run-btn');
@@ -1739,102 +1758,6 @@ document.getElementById('as-run-btn').addEventListener('click', async () => {
 
 
 </script>
-<script>
-// ── Preview Toggle ────────────────────────────────────────────────────────────
-let previewVisible = false;
-
-document.getElementById('preview-toggle-btn').addEventListener('click', () => {
-  previewVisible = !previewVisible;
-  const btn  = document.getElementById('preview-toggle-btn');
-  const wrap = document.getElementById('preview-wrap');
-  btn.className = previewVisible ? 'sched-btn sched-btn-active' : 'sched-btn';
-  if (previewVisible) {
-    wrap.style.display = '';
-    startPreview();
-  } else {
-    wrap.style.display = 'none';
-    stopPreview();
-  }
-});
-
-// ── Stream Preview (WebSocket fMP4 → MSE) ────────────────────────────────────
-let previewWs     = null;
-let mseSource     = null;
-let mseBuffer     = null;
-let mseQueue      = [];
-let mseObjectUrl  = null;
-let mseReady      = false;
-let playerStarted = false;
-
-function flushMSEQueue() {
-  if (!mseReady || !mseBuffer || mseBuffer.updating || mseQueue.length === 0) return;
-  if (!mseSource || mseSource.readyState !== 'open') return;
-  try { mseBuffer.appendBuffer(mseQueue.shift()); }
-  catch(e) { console.warn('[MSE] appendBuffer:', e.message); mseQueue = []; }
-}
-
-function startMSEPlayer() {
-  if (playerStarted) return; // prevent multiple instances
-  playerStarted = true;
-
-  const video = document.getElementById('preview-video');
-  mseSource    = new MediaSource();
-  mseObjectUrl = URL.createObjectURL(mseSource);
-  video.src    = mseObjectUrl;
-
-  mseSource.addEventListener('sourceopen', () => {
-    if (mseBuffer) return; // already initialized
-    try {
-      mseBuffer = mseSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
-      mseBuffer.mode = 'sequence';
-      mseBuffer.addEventListener('updateend', flushMSEQueue);
-      mseReady = true;
-    } catch(e) {
-      console.error('[MSE] addSourceBuffer failed:', e.message);
-      return;
-    }
-
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    previewWs = new WebSocket(`${proto}://${location.host}/ws/preview`);
-    previewWs.binaryType = 'arraybuffer';
-
-    previewWs.onopen  = () => previewWs.send('start');
-    previewWs.onerror = e => console.error('[WS] Error', e);
-    previewWs.onclose = e => console.warn('[WS] Closed code:', e.code);
-
-    previewWs.onmessage = e => {
-      if (!mseReady || !mseSource || mseSource.readyState !== 'open') return;
-      mseQueue.push(new Uint8Array(e.data));
-      flushMSEQueue();
-      if (video.paused && video.buffered.length > 0 && video.buffered.end(0) > 1) {
-        video.play().catch(() => {});
-      }
-    };
-  }, { once: true }); // only fire once!
-}
-
-function stopMSEPlayer() {
-  playerStarted = false;
-  mseReady      = false;
-  mseQueue      = [];
-  if (previewWs) { previewWs.onclose = null; previewWs.send('stop'); previewWs.close(); previewWs = null; }
-  mseBuffer = null;
-  mseSource = null;
-  if (mseObjectUrl) { URL.revokeObjectURL(mseObjectUrl); mseObjectUrl = null; }
-  const video = document.getElementById('preview-video');
-  video.pause();
-  video.removeAttribute('src');
-}
-
-function startPreview() {
-  startMSEPlayer(); // WS 'start' message triggers FFmpeg on server
-}
-
-function stopPreview() {
-  stopMSEPlayer(); // closes local WS — FFmpeg stops only if no other clients
-}
-
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
 </body>
 </html>
