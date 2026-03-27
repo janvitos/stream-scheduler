@@ -720,6 +720,7 @@ function startM3URefreshCron() {
   const [h, m] = settings.m3uRefreshTime.split(':');
   m3uRefreshCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, async () => {
     console.log('[M3U] Running scheduled daily refresh…');
+    logAutoActivity('info', 'Refreshing M3U…');
     try {
       const count = await refreshM3U();
       console.log(`[M3U] Daily refresh complete — ${count} channels.`);
