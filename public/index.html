@@ -205,6 +205,9 @@
     .form-grid-2 { grid-template-columns: 1fr 1fr; }
     .form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
     .field { display: flex; flex-direction: column; gap: 6px; }
+    .recur-sentence { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .recur-sentence select { width: auto; }
+    .recur-word { color: var(--muted); font-size: 13px; white-space: nowrap; }
     label.lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; }
     input:disabled { opacity: .35; cursor: not-allowed; }
     input[type=text], input[type=password], input[type=number],
@@ -222,6 +225,7 @@
     }
     input:disabled, select:disabled { opacity: .35; cursor: not-allowed; }
     input[type=time] { width: auto; padding: 0 12px; }
+    input[type=datetime-local]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(.45); cursor: pointer; }
     select { appearance: none; -webkit-appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
     .input-group { position: relative; }
     .input-group input { width: 100%; padding-right: 36px; }
@@ -293,8 +297,7 @@
     .item-meta  { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
     .item-tag   { font-size: 11px; font-family: 'Inter', sans-serif; padding: 2px 7px; border-radius: 4px; font-weight: 700; display: inline-flex; align-items: center; }
     .tag-channel { background: rgba(180,100,255,.15); color: #b464ff; }
-    .tag-once   { background: rgba(0,119,255,.15); color: var(--accent2); }
-    .tag-cron   { background: rgba(255,107,53,.15); color: var(--accent3); }
+    .tag-sched-type { background: rgba(0,119,255,.15); color: var(--accent2); }
 
     /* ── Schedule list ── */
     .sched-item { padding: 14px 16px; gap: 14px; border-radius: var(--radius); transition: border-color .2s; }
@@ -770,12 +773,20 @@
       <div class="field" id="sm-once-wrap">
         <label class="lbl">Run At</label>
         <input type="datetime-local" id="sm-runat" step="60" />
-        <div class="help" style="visibility:hidden">​</div>
       </div>
       <div class="field" id="sm-cron-wrap" style="display:none">
-        <label class="lbl">Cron Expression</label>
-        <input type="text" id="sm-cron" name="sm-cron" placeholder="0 20 * * 1-5  (weekdays at 8 PM)" />
-        <div class="help">Standard 5-field cron: min hour day month weekday</div>
+        <label class="lbl">Recurring</label>
+        <div class="recur-sentence">
+          <select id="sm-frequency">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <span class="recur-word">at</span>
+          <input type="time" id="sm-recur-time" step="60" />
+          <span class="recur-word" id="sm-on-label" style="display:none">on</span>
+          <select id="sm-recur-day" style="display:none"></select>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -819,8 +830,18 @@
         <input type="datetime-local" id="am-runat" step="60" />
       </div>
       <div class="field" id="am-cron-wrap" style="display:none">
-        <label class="lbl">Cron Expression</label>
-        <input type="text" id="am-cron" name="am-cron" placeholder="0 20 * * 1-5" />
+        <label class="lbl">Recurring</label>
+        <div class="recur-sentence">
+          <select id="am-frequency">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <span class="recur-word">at</span>
+          <input type="time" id="am-recur-time" step="60" />
+          <span class="recur-word" id="am-on-label" style="display:none">on</span>
+          <select id="am-recur-day" style="display:none"></select>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -848,6 +869,22 @@ document.querySelectorAll('.sb-item[data-page]').forEach(el => {
 });
 function navTo(page) {
   if (!pages[page]) page = 'dashboard'; // guard against unknown pages
+  // Leaving dashboard — tear down any active HLS previews
+  if (page !== 'dashboard' && hlsInstances.size > 0) {
+    const list = document.getElementById('relay-list');
+    for (const [slot, hls] of hlsInstances) {
+      hls.destroy();
+      if (list) {
+        const wrap = list.querySelector(`[data-preview-wrap="${slot}"]`);
+        const btn  = list.querySelector(`[data-preview="${slot}"]`);
+        const video = wrap?.querySelector('video');
+        if (wrap)  wrap.style.display = 'none';
+        if (btn)   btn.classList.remove('sched-btn-active');
+        if (video) { video.pause(); video.src = ''; }
+      }
+    }
+    hlsInstances.clear();
+  }
   document.querySelectorAll('.sb-item').forEach(e => e.classList.toggle('active', e.dataset.page === page));
   document.querySelectorAll('.page').forEach(e => e.classList.toggle('active', e.id === 'page-'+page));
   document.getElementById('page-title').textContent = pages[page] || page;
@@ -941,7 +978,7 @@ function renderSchedules() {
   }
   wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
   const list = document.getElementById('sched-list');
-  schedules.forEach(s => list.appendChild(makeSchedItem(s)));
+  [...schedules].reverse().forEach(s => list.appendChild(makeSchedItem(s)));
 }
 
 function makeSchedItem(s) {
@@ -955,11 +992,11 @@ function makeSchedItem(s) {
       <div class="item-url">${esc(s.url)}</div>
       <div class="item-meta">
         ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-time">${fmtDt(s.runAt)}</span>`:''}
-        ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(s.cronExpr||'')}</span>`:''}
+        ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(describeRecurrence(s))}</span>`:''}
         ${channelTag(sChannel)}
-        <span class="item-tag ${s.scheduleType==='cron'?'tag-cron':'tag-once'}">${s.scheduleType==='cron'?'RECURRING':'ONE-TIME'}</span>
-        ${s.preferredSlot?`<span class="item-tag tag-slot">${esc(s.preferredSlot)}</span>`:''}
+        <span class="item-tag tag-sched-type">${s.scheduleType==='cron'?'RECURRING':'ONE-TIME'}</span>
         ${s.lastRun?`<span class="item-tag tag-time">Last: ${fmtDt(s.lastRun)}</span>`:''}
+        <span class="item-tag tag-slot">${esc(s.preferredSlot || 'Auto')}</span>
       </div>
     </div>
     <div class="sched-actions">
@@ -988,7 +1025,6 @@ async function runNow(id) {
 }
 
 async function deleteSchedule(id) {
-  if (!confirm('Delete this schedule?')) return;
   await DELETE(`/api/schedules/${id}`);
   toast('Schedule deleted', 'warn');
   loadSchedules();
@@ -1002,12 +1038,14 @@ let editingId = null;
 function openNewModal() {
   editingId = null;
   document.getElementById('sched-modal-title').textContent = 'New Schedule';
-  document.getElementById('sm-name').value   = '';
-  document.getElementById('sm-url').value    = '';
-  document.getElementById('sm-type').value   = 'now';
-  document.getElementById('sm-runat').value  = localDateTimeValue();
+  document.getElementById('sm-name').value      = '';
+  document.getElementById('sm-url').value       = '';
+  document.getElementById('sm-type').value      = 'now';
+  document.getElementById('sm-runat').value     = localDateTimeValue();
+  document.getElementById('sm-frequency').value = 'daily';
+  document.getElementById('sm-recur-time').value = '20:00';
+  populateRecurDaySelect('sm', 'daily');
   populateSlotDropdown('sm-slot');
-  document.getElementById('sm-cron').value   = '';
   toggleTypeFields('sm', 'now');
   showModal('sched-modal');
 }
@@ -1021,7 +1059,11 @@ function openEditModal(id) {
   document.getElementById('sm-url').value    = s.url;
   document.getElementById('sm-type').value   = s.scheduleType;
   document.getElementById('sm-runat').value  = s.runAt ? s.runAt.slice(0,16) : '';
-  document.getElementById('sm-cron').value   = s.cronExpr || '';
+  if (s.scheduleType === 'cron') {
+    document.getElementById('sm-frequency').value  = s.frequency || 'daily';
+    document.getElementById('sm-recur-time').value = s.recurTime || '20:00';
+    populateRecurDaySelect('sm', s.frequency || 'daily', s.recurDay);
+  }
   toggleTypeFields('sm', s.scheduleType);
   populateSlotDropdown('sm-slot', s.preferredSlot);
   showModal('sched-modal');
@@ -1041,8 +1083,54 @@ function toggleTypeFields(prefix, v) {
   }
 }
 document.getElementById('sm-type').addEventListener('change', e => toggleTypeFields('sm', e.target.value));
+document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
 
-document.getElementById('sched-modal-cancel').addEventListener('click', () => hideModal('sched-modal'));
+function ordinal(n) {
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function populateRecurDaySelect(prefix, frequency, selected) {
+  const onLabel = document.getElementById(prefix + '-on-label');
+  const sel     = document.getElementById(prefix + '-recur-day');
+  if (frequency === 'daily') { onLabel.style.display = 'none'; sel.style.display = 'none'; return; }
+  onLabel.style.display = '';
+  sel.style.display = '';
+  sel.innerHTML = '';
+  if (frequency === 'weekly') {
+    ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = d;
+      if (i === selected) o.selected = true;
+      sel.appendChild(o);
+    });
+  } else {
+    for (let i = 1; i <= 31; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = ordinal(i);
+      if (i === selected) o.selected = true;
+      sel.appendChild(o);
+    }
+  }
+}
+
+function describeRecurrence(s) {
+  if (!s.frequency) return s.cronExpr || 'Recurring';
+  const [h, m] = (s.recurTime || '00:00').split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  const timeStr = `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  if (s.frequency === 'daily')   return `Daily at ${timeStr}`;
+  if (s.frequency === 'weekly')  return `Weekly on ${days[s.recurDay] || ''} at ${timeStr}`;
+  if (s.frequency === 'monthly') return `Monthly on the ${ordinal(s.recurDay || 1)} at ${timeStr}`;
+  return s.cronExpr || 'Recurring';
+}
+
+document.getElementById('sm-frequency').addEventListener('change', e => populateRecurDaySelect('sm', e.target.value));
+document.getElementById('am-frequency').addEventListener('change', e => populateRecurDaySelect('am', e.target.value));
+
+document.getElementById('sched-modal-cancel').addEventListener('click', () => { editingId = null; hideModal('sched-modal'); });
 // #5 — shared schedule payload builder
 function populateSlotDropdown(id, selectedSlot) {
   const sel = document.getElementById(id);
@@ -1060,14 +1148,21 @@ function populateSlotDropdown(id, selectedSlot) {
 }
 
 function buildSchedulePayload(prefix, url) {
-  return {
+  const scheduleType = document.getElementById(`${prefix}-type`).value;
+  const payload = {
     name:          document.getElementById(`${prefix}-name`).value || 'Untitled',
     url,
-    scheduleType:  document.getElementById(`${prefix}-type`).value,
-    runAt:         document.getElementById(`${prefix}-runat`).value || null,
-    cronExpr:      document.getElementById(`${prefix}-cron`).value.trim() || null,
+    scheduleType,
+    runAt:         scheduleType === 'once' ? (document.getElementById(`${prefix}-runat`).value || null) : null,
     preferredSlot: document.getElementById(`${prefix}-slot`)?.value || null,
   };
+  if (scheduleType === 'cron') {
+    payload.frequency = document.getElementById(`${prefix}-frequency`).value;
+    payload.recurTime = document.getElementById(`${prefix}-recur-time`).value || '00:00';
+    const dayEl = document.getElementById(`${prefix}-recur-day`);
+    payload.recurDay = dayEl.style.display !== 'none' ? parseInt(dayEl.value) : null;
+  }
+  return payload;
 }
 
 document.getElementById('sched-modal-save').addEventListener('click', async () => {
@@ -1237,7 +1332,7 @@ async function loadCacheInfo() {
 }
 
 // Shared download function — called by both Get and Refresh buttons
-function startM3UDownload(url, triggerBtn) {
+function startM3UDownload(url) {
   resetProgress();
   const wasReady = m3uReady;
   setSearchEnabled(false);
@@ -1461,11 +1556,12 @@ function openAddModal(ch) {
     document.getElementById('am-runat').value = localDateTimeValue();
     toggleTypeFields('am', 'now');
   }
-  document.getElementById('am-cron').value   = '';
+  document.getElementById('am-frequency').value  = 'daily';
+  document.getElementById('am-recur-time').value = '20:00';
+  populateRecurDaySelect('am', 'daily');
   populateSlotDropdown('am-slot');
   showModal('add-modal');
 }
-document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
 document.getElementById('add-modal-cancel').addEventListener('click', () => hideModal('add-modal'));
 document.getElementById('add-modal-save').addEventListener('click', async () => {
   const url  = document.getElementById('am-url').value.trim();
@@ -1522,6 +1618,11 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('mousedown', e => { downOnOverlay = e.target === o; });
   o.addEventListener('mouseup',   e => { if (downOnOverlay && e.target === o) o.classList.remove('show'); });
 });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const open = document.querySelector('.modal-overlay.show');
+  if (open) open.classList.remove('show');
+});
 
 /* ═══════════════════════════════════════════
    Auth
@@ -1544,8 +1645,8 @@ function makeRelayCard(relay) {
         ${relay.url ? `<div class="item-url">${esc(relay.url)}</div>` : ''}
         <div class="item-meta">
           <span class="item-tag tag-time">${fmtDt(relay.startedAt)}</span>
-          <span class="item-tag tag-slot">${esc(relay.slot)}</span>
           ${channelTag(channel)}
+          <span class="item-tag tag-slot">${esc(relay.slot)}</span>
         </div>
       </div>
       <div class="np-header-actions">
@@ -1571,7 +1672,7 @@ function toggleRelayPreview(slot, watchUrl) {
   const isVisible = wrap.style.display !== 'none';
   if (isVisible) {
     wrap.style.display = 'none';
-    btn.className = 'sched-btn';
+    btn.classList.remove('sched-btn-active');
     if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
     video.pause(); video.src = '';
   } else {
@@ -1662,7 +1763,7 @@ function fmtDt(iso) {
   } catch {}
   // Restore page from URL path, default to dashboard
   const savedPage = location.pathname.replace(/^\//, '') || 'dashboard';
-  navTo(savedPage || 'dashboard');
+  navTo(savedPage);
   connectDashboardSSE();
   connectAutoSchedSSE();
   // Remove loader only after fonts and data are ready — prevents FOUC
@@ -1715,7 +1816,8 @@ function makeSSE(url, onMessage) {
       if (!e.data || e.data.trim() === '') return; // ignore heartbeat
       onMessage(JSON.parse(e.data));
     };
-    sse.onerror = () => { sse.close(); sse = null; setTimeout(connect, 3000); };
+    let reconnecting = false;
+    sse.onerror = () => { sse.close(); sse = null; if (!reconnecting) { reconnecting = true; setTimeout(() => { reconnecting = false; connect(); }, 3000); } };
   }
   return connect;
 }

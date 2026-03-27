@@ -114,6 +114,7 @@ app.post('/api/system/restart', (req, res) => {
 app.get('/api/proxy-image', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).end();
+  if (!/^https?:\/\//i.test(url)) return res.status(400).end();
   try {
     const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 5000 });
     const contentType = response.headers['content-type'] || 'image/png';
@@ -173,23 +174,40 @@ app.put('/api/settings', (req, res) => {
 });
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
+const resolveLogoForUrl = (url, provided) =>
+  provided || (m3uMemCache?.channels || []).find(c => c.url === url)?.logo || null;
+
 app.get('/api/schedules', (req, res) => res.json(schedules));
+
+function buildCronFromFrequency(frequency, recurTime, recurDay) {
+  const [h, m] = (recurTime || '00:00').split(':').map(Number);
+  if (frequency === 'daily')   return `${m} ${h} * * *`;
+  if (frequency === 'weekly')  return `${m} ${h} * * ${recurDay ?? 1}`;
+  if (frequency === 'monthly') return `${m} ${h} ${recurDay ?? 1} * *`;
+  return null;
+}
 
 app.post('/api/schedules', (req, res) => {
   const s = {
-    id:           uuidv4(),
-    name:         req.body.name        || 'Untitled',
-    url:          req.body.url,
-    logo:         req.body.logo || (m3uMemCache?.channels || []).find(c => c.url === req.body.url)?.logo || null,
+    id:            uuidv4(),
+    name:          req.body.name          || 'Untitled',
+    url:           req.body.url,
+    logo:          resolveLogoForUrl(req.body.url, req.body.logo),
     scheduleType:  req.body.scheduleType  || 'once',
     runAt:         req.body.runAt         || null,
     cronExpr:      req.body.cronExpr      || null,
+    frequency:     req.body.frequency     || null,
+    recurTime:     req.body.recurTime     || null,
+    recurDay:      req.body.recurDay      != null ? parseInt(req.body.recurDay) : null,
     preferredSlot: req.body.preferredSlot || null,
     enabled:       true,
-    createdAt:    new Date().toISOString(),
-    lastRun:      null,
-    nextRun:      null
+    createdAt:     new Date().toISOString(),
+    lastRun:       null,
+    nextRun:       null
   };
+  if (s.scheduleType === 'cron' && s.frequency) {
+    s.cronExpr = buildCronFromFrequency(s.frequency, s.recurTime, s.recurDay);
+  }
   if (!s.url) return res.status(400).json({ error: 'URL required' });
   schedules.push(s);
   saveSchedules();
@@ -202,6 +220,10 @@ app.put('/api/schedules/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
   unregisterSchedule(schedules[idx].id);
   schedules[idx] = { ...schedules[idx], ...req.body, id: schedules[idx].id };
+  if (req.body.recurDay != null) schedules[idx].recurDay = parseInt(req.body.recurDay);
+  if (schedules[idx].scheduleType === 'cron' && schedules[idx].frequency) {
+    schedules[idx].cronExpr = buildCronFromFrequency(schedules[idx].frequency, schedules[idx].recurTime, schedules[idx].recurDay);
+  }
   saveSchedules();
   registerSchedule(schedules[idx]);
   res.json(schedules[idx]);
@@ -222,7 +244,7 @@ app.delete('/api/schedules/:id', (req, res) => {
 app.post('/api/play-now', async (req, res) => {
   const { name, url, noHistory, logo } = req.body;
   if (!url) return res.status(400).json({ error: 'URL required' });
-  const resolvedLogo = logo || (m3uMemCache?.channels || []).find(c => c.url === url)?.logo || null;
+  const resolvedLogo = resolveLogoForUrl(url, logo);
   const { preferredSlot } = req.body;
   const s = { id: null, name: name || 'Now', url, noHistory, logo: resolvedLogo, preferredSlot: preferredSlot || null };
   const result = await launchStream(s);
@@ -285,6 +307,7 @@ app.post('/api/m3u/use-cache', (req, res) => {
 app.get('/api/m3u/download', async (req, res) => {
   const url = req.query.url;
   if (!url) { res.status(400).end(); return; }
+  if (!/^https?:\/\//i.test(url)) { res.status(400).end(); return; }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -318,9 +341,8 @@ app.get('/api/m3u/download', async (req, res) => {
         send({ type: 'parsing' });
         const channels = parseM3U(raw);
         m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: received };
-        fs.writeFile(M3U_CACHE_PATH, JSON.stringify(m3uMemCache), (err) => {
-          if (err) console.warn('Could not persist M3U cache:', err.message);
-        });
+        fs.promises.writeFile(M3U_CACHE_PATH, JSON.stringify(m3uMemCache))
+          .catch(err => console.warn('Could not persist M3U cache:', err.message));
         logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded`);
         send({ type: 'done', count: channels.length });
       } catch (parseErr) {
@@ -344,7 +366,7 @@ app.get('/api/m3u/download', async (req, res) => {
 app.post('/api/m3u/search', (req, res) => {
   const { query } = req.body;
   if (!m3uMemCache) return res.status(404).json({ error: 'No M3U loaded — download one or load from cache first' });
-  const q = (query || '').toLowerCase().trim();
+  const q = (query || '').slice(0, 100).toLowerCase().trim();
   const results = q
     ? m3uMemCache.channels.filter(c => (c.name || '').toLowerCase().includes(q))
     : m3uMemCache.channels;
@@ -425,7 +447,7 @@ function unregisterSchedule(id) {
   if (!cronJobs.has(id)) return;
   const j = cronJobs.get(id);
   if (j.type === 'timeout') clearTimeout(j.handle);
-  if (j.type === 'cron')    j.handle.destroy();
+  if (j.type === 'cron')    j.handle.stop();
   cronJobs.delete(id);
 }
 
@@ -460,7 +482,8 @@ function spawnRelay(slot, s) {
 
   let proc;
   try {
-    proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+    proc.unref();
   } catch (e) {
     console.error(`[Relay] Failed to spawn FFmpeg for ${slot}:`, e.message);
     return null;
@@ -752,7 +775,9 @@ function createSSEEndpoint(clientSet) {
     res.flushHeaders();
     clientSet.add(res);
     const heartbeat = setInterval(() => res.write(': ping\n\n'), 30000);
-    req.on('close', () => { clearInterval(heartbeat); clientSet.delete(res); });
+    const cleanup = () => { clearInterval(heartbeat); clientSet.delete(res); };
+    req.on('close', cleanup);
+    res.on('error', cleanup);
   };
 }
 
@@ -781,7 +806,10 @@ app.post('/api/auto-scheduler/disable', (req, res) => {
   res.json({ ok: true, enabled: false });
 });
 
-app.post('/api/auto-scheduler/run', async (req, res) => { res.json({ ok: true }); await runAutoScheduler(); });
+app.post('/api/auto-scheduler/run', async (req, res) => {
+  res.json({ ok: true });
+  try { await runAutoScheduler(); } catch (e) { logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message); }
+});
 
 // Catch-all: serve index.html for any unmatched route (enables History API navigation)
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

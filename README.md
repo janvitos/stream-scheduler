@@ -10,7 +10,7 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 
 - **M3U & Xtream Codes** — fetch and search channels from any M3U URL or Xtream Codes provider
 - **One-time schedules** — relay a stream at a specific date and time, fires once then removes itself
-- **Recurring schedules** — use standard cron expressions for daily, weekly, or custom intervals
+- **Recurring schedules** — schedule daily, weekly, or monthly recurrences via a simple time/day picker
 - **Multi-stream relay** — up to 5 simultaneous FFmpeg relay slots (`stream01`–`stream05`), configurable in Settings
 - **Preferred relay slot** — optionally pin a schedule or the auto-scheduler to a specific slot
 - **In-browser HLS preview** — watch any active relay directly in the dashboard via hls.js
@@ -138,7 +138,7 @@ http://192.168.1.x:3000
 2. Click or tap any channel to open the scheduling modal:
    - **Now** — relays immediately to the next free slot
    - **Once** — pick a date and time
-   - **Recurring** — enter a cron expression
+   - **Recurring** — choose Daily / Weekly / Monthly, set a time, and (for weekly/monthly) pick a day
 3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto)
 
 ### Active Relays (Dashboard)
@@ -151,29 +151,10 @@ http://192.168.1.x:3000
 
 - **Run Now** — trigger any schedule immediately
 - **Edit** — update name, time, relay slot, or recurrence
-- **Delete** — remove a schedule
-- Recurring schedules show their last run time
+- **Delete** — remove a schedule immediately (no confirmation)
+- Recurring schedules display a human-readable label (e.g. "Weekly on Monday at 8:00 PM") and show their last run time
 - One-time schedules remove themselves after firing
-
-### Cron Reference
-
-```
-┌───── minute (0–59)
-│ ┌─── hour (0–23)
-│ │ ┌─ day of month (1–31)
-│ │ │ ┌ month (1–12)
-│ │ │ │ ┌ day of week (0–7, 0 and 7 = Sunday)
-│ │ │ │ │
-* * * * *
-```
-
-Examples:
-```
-0 20 * * 1-5    →  8:00 PM every weekday
-30 18 * * 6,0   →  6:30 PM on weekends
-0 */2 * * *     →  Every 2 hours
-0 9 * * 1       →  Every Monday at 9:00 AM
-```
+- Schedules are listed newest-first; slot always shown (displays "Auto" if no preferred slot is set)
 
 ### Auto-Scheduler (Settings)
 
@@ -230,7 +211,7 @@ All data is stored in the `data/` directory:
 | File                  | Contents                                          |
 |-----------------------|---------------------------------------------------|
 | `config.json`         | Port, username, hashed password                   |
-| `schedules.json`      | All saved schedules (includes `preferredSlot`)    |
+| `schedules.json`      | All saved schedules (includes `preferredSlot`, `frequency`, `recurTime`, `recurDay`) |
 | `history.json`        | Playback log (last 10 entries)                    |
 | `relays.json`         | Active relay state — slot, name, pid (persisted across restarts) |
 | `settings.json`       | SRS URLs, max slots, M3U refresh settings         |

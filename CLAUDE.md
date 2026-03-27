@@ -25,7 +25,7 @@ All server logic lives in one file. Key sections, in order:
 - **Config/persistence** — reads `data/config.json` at startup (exits if missing). All state is held in memory and flushed to JSON files in `data/` on mutation via `readJSON`/`writeJSON` helpers.
 - **Auth** — session-based (`express-session`). `requireAuth` middleware gates all routes below its `app.use()` call. Password is bcrypt-hashed in `config.json`.
 - **REST API** — standard CRUD for schedules (`/api/schedules`), settings (`/api/settings`), history (`/api/history`), relays (`/api/relays`), and M3U/Xtream (`/api/m3u/*`). Key endpoints: `POST /api/play-now` launches a relay immediately; `DELETE /api/relays/:slot` stops a relay. A catch-all `GET *` route at the bottom serves `index.html` for History API navigation (e.g. `/settings`).
-- **Scheduler engine** — `registerSchedule`/`unregisterSchedule` manage a `cronJobs` Map. One-time schedules use `setTimeout`; recurring use `node-cron`. All enabled schedules are re-registered at startup.
+- **Scheduler engine** — `registerSchedule`/`unregisterSchedule` manage a `cronJobs` Map. One-time schedules use `setTimeout`; recurring use `node-cron`. All enabled schedules are re-registered at startup. `buildCronFromFrequency(frequency, recurTime, recurDay)` derives a 5-field cron string from the friendly `frequency` / `recurTime` / `recurDay` fields stored on the schedule; this is called on create and edit so `cronExpr` is always kept in sync.
 - **Relay engine** — `findFreeSlot(preferred)` picks the next available slot up to `settings.maxSlots`. `spawnRelay(slot, s)` spawns `bin/ffmpeg.exe` re-encoding the IPTV stream and pushing RTMP to `settings.srsUrl/<slot>`. `launchStream(s)` wraps both, sets the relay in the `relays` Map, persists state, and logs history. On FFmpeg exit with non-zero code, the error is logged to the Activity Log and the slot is freed. The `relays` Map holds `{ slot, name, url, logo, startedAt, pid, proc }` — `proc` is stripped when serialising to disk.
 - **Startup relay restoration** — `relays.json` is read at boot. For each persisted relay, `process.kill(pid, 0)` checks if the FFmpeg process is still alive. Alive PIDs are restored into the relays Map (without a proc handle). Dead ones are discarded. This allows FFmpeg processes to survive a Node.js restart.
 - **Auto-Scheduler** — daily cron job (configurable time, Eastern timezone) that hits the ESPN scoreboard API, finds games matching a search string, searches the M3U cache for a matching channel, and auto-creates a one-time schedule. State persisted in `data/auto_scheduler.json`. Activity log includes M3U refresh events (manual and automatic) and relay error events.
@@ -38,12 +38,15 @@ Single HTML file with all CSS and JS inline. Navigation uses the History API (`p
 
 Key utilities:
 - `debounce(fn, ms)` — used for auto-save inputs
-- `buildSchedulePayload(prefix, url)` — shared between New Schedule and Add Channel modals; includes `preferredSlot`
+- `buildSchedulePayload(prefix, url)` — shared between New Schedule and Add Channel modals; includes `preferredSlot`. For `cron` type, reads `frequency`, `recurTime`, and `recurDay` from the sentence UI instead of a raw cron string.
 - `showM3UMessage(type, text)` — unified M3U status messages
 - `setToggleState(el, on)` — sets `.toggle-on` class on toggle switches
 - `makeSSE(url, onMessage)` — SSE connection factory with auto-reconnect
 - `GET` / `POST` / `PUT` / `DELETE` — fetch helpers
 - `populateSlotDropdown(id, selectedSlot)` — fills a relay slot `<select>` (Auto + stream01–streamN based on `maxSlots`)
+- `populateRecurDaySelect(prefix, frequency, selected)` — populates the day-of-week or day-of-month `<select>` in the recurrence sentence builder; hides it for `daily`
+- `describeRecurrence(s)` — returns a human-readable string ("Daily at 8:00 PM", "Weekly on Monday at 6:30 PM") from a schedule's `frequency`/`recurTime`/`recurDay` fields; falls back to raw `cronExpr` for legacy schedules
+- `ordinal(n)` — returns "1st", "2nd", etc.; used by `describeRecurrence` for monthly labels
 - `makeRelayCard(relay)` — builds an Active Relays card with eye (preview) and stop buttons
 - `toggleRelayPreview(slot, watchUrl)` — shows/hides HLS video preview using hls.js; tracks instances in `hlsInstances` Map
 - `renderRelays(list)` — reconciles the `#relay-list` DOM against the current relay array (add new, remove gone)
@@ -53,14 +56,17 @@ UI patterns:
 - All buttons use a **semi-transparent tinted style**: `rgba(color, .12)` background, vivid color text, `rgba(color, .25)` border. Green = action, blue = edit, red = delete/stop/danger.
 - Square 38×38 `sched-btn` variants: `sched-btn-edit` (blue), `sched-btn-delete` (red), `sched-btn-stop` (red), `sched-btn-active` (outlined green, used for preview active state).
 - Active Relay cards and Recent Activity are **separate cards** on the dashboard.
-- Relay cards display: logo, stream name, `tag-time` (start time), `tag-slot` (slot name, orange tint), channel tag.
+- Relay cards display: logo, stream name, `tag-time` (start time), channel tag, `tag-slot` (slot name, orange tint).
+- Schedule items render newest-first. The slot tag always appears (shows "Auto" when no preferred slot is set). The schedule-type badge uses unified class `tag-sched-type`.
+- Recurring schedule modal uses a sentence-style builder (`recur-sentence`): frequency `<select>` → "at" → time `<input>` → optional "on" + day `<select>` for weekly/monthly. No raw cron expression field is exposed to the user.
+- Delete schedule fires immediately with no confirmation dialog.
 
 ### Data files (`data/`)
 
 | File | Contents |
 |------|----------|
 | `config.json` | Port, username, bcrypt password hash, session secret |
-| `schedules.json` | Array of schedule objects (includes `preferredSlot`) |
+| `schedules.json` | Array of schedule objects (includes `preferredSlot`, `frequency`, `recurTime`, `recurDay`) |
 | `history.json` | Last 10 playback entries |
 | `settings.json` | `srsUrl`, `srsWatchUrl`, `maxSlots`, `m3uAutoRefresh`, `m3uRefreshTime` |
 | `auto_scheduler.json` | Auto-scheduler config + activity log |
