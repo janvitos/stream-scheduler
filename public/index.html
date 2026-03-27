@@ -1378,7 +1378,7 @@ function renderChannels(channels, count, total) {
       <div class="item-info">
         <div class="item-name">${esc(chTitle || ch.name)}</div>
         <div class="item-url">${esc(ch.url)}</div>
-        ${chChannel ? `<div class="item-meta">${channelTag(chChannel)}</div>` : ''}
+        ${(chChannel || ch.eventTime) ? `<div class="item-meta">${ch.eventTime ? `<span class="item-tag tag-muted">${fmtDt(ch.eventTime)}</span>` : ''}${channelTag(chChannel)}</div>` : ''}
       </div>`;
     div.addEventListener('click', () => openAddModal(ch));
     list.appendChild(div);
