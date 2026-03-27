@@ -447,10 +447,11 @@ function findFreeSlot(preferred) {
 function spawnRelay(slot, s) {
   const outputUrl = `${settings.srsUrl.replace(/\/$/, '')}/${slot}`;
   const args = [
+    '-re',
     '-fflags', '+genpts+discardcorrupt',
     '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
     '-i', s.url,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-crf', '23',
     '-g', '60',
     '-c:a', 'aac', '-b:a', '128k',
     '-f', 'flv',
@@ -499,6 +500,8 @@ function killRelay(slot) {
   return true;
 }
 
+const launching = new Set();
+
 async function launchStream(s) {
   const slot = findFreeSlot(s.preferredSlot);
   if (!slot) {
@@ -507,11 +510,15 @@ async function launchStream(s) {
     return { ok: false, error: msg };
   }
 
+  if (launching.has(slot)) return { ok: false, error: `Slot ${slot} is already being launched` };
+  launching.add(slot);
+
   const proc = spawnRelay(slot, s);
-  if (!proc) return { ok: false, error: 'Failed to spawn FFmpeg' };
+  if (!proc) { launching.delete(slot); return { ok: false, error: 'Failed to spawn FFmpeg' }; }
 
   const startedAt = new Date().toISOString();
   relays.set(slot, { slot, name: s.name, url: s.url, logo: s.logo || null, startedAt, pid: proc.pid, proc });
+  launching.delete(slot);
   saveRelays();
 
   // Log history after relay is confirmed started

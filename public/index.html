@@ -220,14 +220,20 @@
       width: 100%;
     }
     input:disabled, select:disabled { opacity: .35; cursor: not-allowed; }
-    input[type=time] { width: auto; padding: 0 6px; }
+    input[type=time] { width: auto; padding: 0 12px; }
+    select { appearance: none; -webkit-appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+    .input-group { position: relative; }
+    .input-group input { width: 100%; padding-right: 36px; }
+    .input-group .btn-copy { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; border: none; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
+    .input-group .btn-copy:hover { color: var(--accent); }
+    .input-group .btn-copy.copied { color: var(--accent); }
 
     /* ── Toggle switch ── */
     .toggle-switch { width: 36px; height: 20px; border-radius: 10px; background: transparent; border: 1px solid rgba(0,229,160,.25); box-sizing: border-box; position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
     .toggle-knob   { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); opacity: .5; position: absolute; top: 1px; left: 1px; transition: left .2s, opacity .2s; }
     .toggle-switch.toggle-on { background: rgba(0,229,160,.12); }
     .toggle-switch.toggle-on .toggle-knob { left: 17px; opacity: 1; }
-    .tag-slot { background: rgba(0,119,255,.15); color: var(--accent2); }
+    .tag-slot { background: rgba(255,160,50,.15); color: #ffa032; }
     .relay-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
     #relay-list { display: flex; flex-direction: column; gap: 8px; }
 
@@ -635,26 +641,27 @@
 
         <div class="card">
           <div class="card-header"><div class="card-title">📡 SRS Relay Server</div></div>
-          <div class="field">
-            <label class="lbl">RTMP Input URL</label>
-            <input type="text" id="srs-url" placeholder="e.g. rtmp://192.168.1.125/live"/>
-            <div class="help mt-4">The RTMP URL where FFmpeg pushes relayed streams to SRS.</div>
+          <div class="form-grid form-grid-2">
+            <div class="field">
+              <label class="lbl">RTMP Input URL</label>
+              <input type="text" id="srs-url" placeholder="e.g. rtmp://192.168.1.125/live"/>
+            </div>
+            <div class="field">
+              <label class="lbl">Watch Base URL</label>
+              <input type="text" id="srs-watch-url" placeholder="e.g. https://stream.ipnoze.com/live"/>
+            </div>
           </div>
-          <div class="field mt-12">
-            <label class="lbl">Watch Base URL</label>
-            <input type="text" id="srs-watch-url" placeholder="e.g. https://stream.ipnoze.com/live"/>
-            <div class="help mt-4">The base HTTP URL used to generate Watch links (HLS).</div>
-          </div>
-          <div class="field mt-12">
-            <label class="lbl">Max Simultaneous Streams</label>
-            <select id="max-slots">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-            </select>
-            <div class="help mt-4">Number of streams that can relay simultaneously.</div>
+          <div class="form-grid form-grid-2 mt-16">
+            <div class="field">
+              <label class="lbl">Max Simultaneous Streams</label>
+              <select id="max-slots">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -677,13 +684,13 @@
               <input type="time" id="as-time"/>
             </div>
             <div class="field">
+              <label class="lbl">API Endpoint</label>
+              <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
+            </div>
+            <div class="field">
               <label class="lbl">Default Relay Slot</label>
               <select id="as-slot"></select>
             </div>
-          </div>
-          <div class="field mt-16">
-            <label class="lbl">API Endpoint</label>
-            <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
           </div>
           <div id="as-refresh-row" class="flex gap-8 mt-16 align-center">
             <span class="setting-text">Refresh M3U before running</span>
@@ -742,15 +749,14 @@
       </div>
       <div class="field">
         <label class="lbl">Stream URL</label>
-        <input type="text" id="sm-url" name="sm-url" placeholder="http://…" />
+        <div class="input-group">
+          <input type="text" id="sm-url" name="sm-url" placeholder="http://…" />
+          <button type="button" class="btn-copy" id="sm-url-copy" title="Copy URL"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="11" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-7A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5"/></svg></button>
+        </div>
       </div>
       <div class="field">
-        <label class="lbl">Schedule Type</label>
-        <select id="sm-type">
-          <option value="now">Now</option>
-          <option value="once">One-time</option>
-          <option value="cron">Recurring (cron)</option>
-        </select>
+        <label class="lbl">Relay Slot</label>
+        <select id="sm-slot"></select>
       </div>
       <div class="field" id="sm-once-wrap">
         <label class="lbl">Run At</label>
@@ -762,9 +768,12 @@
         <div class="help">Standard 5-field cron: min hour day month weekday</div>
       </div>
       <div class="field">
-        <label class="lbl">Relay Slot</label>
-        <select id="sm-slot"></select>
-        <div class="help mt-4">Auto assigns the first available slot.</div>
+        <label class="lbl">Schedule Type</label>
+        <select id="sm-type">
+          <option value="now">Now</option>
+          <option value="once">One-time</option>
+          <option value="cron">Recurring (cron)</option>
+        </select>
       </div>
     </div>
     <div class="modal-footer">
@@ -785,16 +794,15 @@
       </div>
       <div class="field">
         <label class="lbl">Stream URL</label>
-        <input type="text" id="am-url" readonly style="color:var(--muted);font-size:11px;" />
+        <div class="input-group">
+          <input type="text" id="am-url" readonly style="color:var(--muted);font-size:11px;" />
+          <button type="button" class="btn-copy" id="am-url-copy" title="Copy URL"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="11" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-7A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5"/></svg></button>
+        </div>
         <input type="hidden" id="am-logo" />
       </div>
       <div class="field">
-        <label class="lbl">Schedule Type</label>
-        <select id="am-type">
-          <option value="now">Now</option>
-          <option value="once">One-time</option>
-          <option value="cron">Recurring (cron)</option>
-        </select>
+        <label class="lbl">Relay Slot</label>
+        <select id="am-slot"></select>
       </div>
       <div class="field" id="am-once-wrap">
         <label class="lbl">Run At</label>
@@ -805,9 +813,12 @@
         <input type="text" id="am-cron" name="am-cron" placeholder="0 20 * * 1-5" />
       </div>
       <div class="field">
-        <label class="lbl">Relay Slot</label>
-        <select id="am-slot"></select>
-        <div class="help mt-4">Auto assigns the first available slot.</div>
+        <label class="lbl">Schedule Type</label>
+        <select id="am-type">
+          <option value="now">Now</option>
+          <option value="once">One-time</option>
+          <option value="cron">Recurring (cron)</option>
+        </select>
       </div>
     </div>
     <div class="modal-footer">
@@ -893,6 +904,21 @@ function toast(msg, type='ok') {
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 3000);
 }
 
+function copyUrlBtn(inputId, btnId) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const val = document.getElementById(inputId)?.value?.trim();
+    if (!val) return;
+    navigator.clipboard.writeText(val).then(() => {
+      btn.innerHTML = '✓'; btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="11" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-7A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5"/></svg>'; btn.classList.remove('copied'); }, 1500);
+    }).catch(() => toast('Copy failed', 'error'));
+  });
+}
+copyUrlBtn('sm-url', 'sm-url-copy');
+copyUrlBtn('am-url', 'am-url-copy');
+
 /* ═══════════════════════════════════════════
    Schedules
 ═══════════════════════════════════════════ */
@@ -930,6 +956,7 @@ function makeSchedItem(s) {
         ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(s.cronExpr||'')}</span>`:''}
         ${channelTag(sChannel)}
         <span class="item-tag ${s.scheduleType==='cron'?'tag-cron':'tag-once'}">${s.scheduleType==='cron'?'RECURRING':'ONE-TIME'}</span>
+        ${s.preferredSlot?`<span class="item-tag tag-slot">${esc(s.preferredSlot)}</span>`:''}
         ${s.lastRun?`<span class="item-tag tag-time">Last: ${fmtDt(s.lastRun)}</span>`:''}
       </div>
     </div>
