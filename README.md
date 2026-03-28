@@ -19,8 +19,7 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 - **FFmpeg auto-restart** — if FFmpeg exits unexpectedly (any exit not triggered by the Stop button), the relay automatically re-spawns after a 3-second delay
 - **Stream survival** — FFmpeg relay processes are detached from Node.js and survive both a Node.js crash and a full NSSM service restart; live processes are re-spawned on boot for full crash detection
 - **Cross-platform FFmpeg** — uses `bin/ffmpeg` if present, otherwise falls back to `ffmpeg` on the system PATH; Windows uses `ffmpeg.exe` automatically
-- **FFmpeg logging** — optional per-slot log files capturing warnings and errors; configurable directory and max file size
-- **Console logging** — toggle server-side console output on or off (useful when running as a background service)
+- **Debug logging** — single toggle enabling both per-slot FFmpeg log files and server-side console output; configurable log directory and max file size
 - **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
 - **Playback history** — log of every stream launched with timestamps and status
 - **Activity log** — dedicated page tracking auto-scheduler activity, M3U refreshes, relay errors, and auto-restart events (last 100 entries)
@@ -197,8 +196,7 @@ Matched events are scheduled 10 minutes before their ESPN-listed start time. Gam
 
 ### Logging (Settings)
 
-- **FFmpeg Logging** — when enabled, each relay slot writes warnings and errors to `logs/ffmpeg-<slot>.log` inside the StreamSched folder. Configure the log directory and max file size (1–100 MB; file is truncated at relay start if the limit is exceeded). Defaults to off.
-- **Console Logging** — toggles server-side `console.log` output. Useful to enable when running `node server.js` directly for debugging; leave off when running as an NSSM service. `console.error` is always active regardless of this setting. Defaults to off.
+- **Debug Logging** — a single toggle that controls all optional logging. When enabled: each relay slot writes FFmpeg warnings and errors to `logs/ffmpeg-<slot>.log` inside the StreamSched folder, and server-side `console.log` output is active. Configure the log directory and **FFmpeg Log Max File Size** (1–100 MB; file is truncated at relay start if the limit is exceeded). `console.error` is always active regardless of this setting. Defaults to off.
 
 ### Recent Activity (Dashboard)
 
@@ -256,7 +254,7 @@ All data is stored in the `data/` directory:
 | `schedules.json`      | All saved schedules (includes `preferredSlot`, `frequency`, `recurTime`, `recurDay`) |
 | `history.json`        | Playback log (last 10 entries)                    |
 | `relays.json`         | Active relay state — slot, name, pid (persisted across restarts) |
-| `settings.json`       | SRS URLs, max slots, M3U refresh settings, FFmpeg logging config, console logging toggle |
+| `settings.json`       | SRS URLs, max slots, M3U refresh settings, debug logging config (`debugLogging`, `ffmpegLogPath`, `ffmpegLogMaxSizeMb`) |
 | `auto_scheduler.json` | Auto-scheduler config, default slot, activity log (last 100 entries) |
 | `m3u_cache.json`      | Cached channel list from last M3U fetch           |
 

@@ -46,8 +46,7 @@ Key utilities:
 - `GET` / `POST` / `PUT` / `DELETE` — fetch helpers
 - `populateSlotDropdown(id, selectedSlot)` — fills a relay slot `<select>` (Auto + stream01–streamN based on `maxSlots`)
 - `updateSlotVisibility()` — reads `maxSlots` from the DOM and hides the slot `.field` in modals (`sm-slot`, `am-slot`) when maxSlots=1; the auto-scheduler slot (`as-slot`) is always visible but disabled and greyed when maxSlots=1. Also repopulates `as-slot` options to fix a race between `loadAutoScheduler` and `loadCacheInfo` on init.
-- `updateFFmpegLogToggle()` — sets toggle state and disables/greys `ffmpeg-log-path` and `ffmpeg-log-max-mb` inputs when FFmpeg logging is off
-- `updateConsoleLogToggle()` — sets toggle state for the console logging toggle
+- `updateDebugLogToggle()` — sets toggle state for the `debug-log-toggle` and disables/greys `ffmpeg-log-path` and `ffmpeg-log-max-mb` inputs when debug logging is off
 - `populateRecurDaySelect(prefix, frequency, selected)` — populates the day-of-week or day-of-month `<select>` in the recurrence sentence builder; hides it for `daily`
 - `describeRecurrence(s)` — returns a compact time/day string for a schedule's recurrence: `"8:00 PM"` (daily), `"Mon · 8:00 PM"` (weekly), `"1st · 8:00 PM"` (monthly); falls back to raw `cronExpr` for legacy schedules
 - `ordinal(n)` — returns "1st", "2nd", etc.; used by `describeRecurrence` for monthly labels
@@ -79,7 +78,7 @@ UI patterns:
 | `config.json` | Port, username, bcrypt password hash, session secret |
 | `schedules.json` | Array of schedule objects (includes `preferredSlot`, `frequency`, `recurTime`, `recurDay`) |
 | `history.json` | Last 10 playback entries |
-| `settings.json` | `srsUrl`, `srsWatchUrl`, `maxSlots`, `m3uAutoRefresh`, `m3uRefreshTime`, `ffmpegLogEnabled`, `ffmpegLogPath`, `ffmpegLogMaxSizeMb`, `consoleLogEnabled` |
+| `settings.json` | `srsUrl`, `srsWatchUrl`, `maxSlots`, `m3uAutoRefresh`, `m3uRefreshTime`, `debugLogging`, `ffmpegLogPath`, `ffmpegLogMaxSizeMb` |
 | `auto_scheduler.json` | Auto-scheduler config + activity log (capped at 100 entries) |
 | `m3u_cache.json` | Persisted M3U channel list |
 | `relays.json` | Persisted relay state — slot, name, url, logo, startedAt, pid (no proc) |
@@ -92,8 +91,7 @@ UI patterns:
 - **Relay slots** — up to 5 slots (`stream01`–`stream05`). `settings.maxSlots` (1–5, default 2) controls how many are available. Schedules and play-now support a `preferredSlot`; if the preferred slot is free and within `maxSlots`, it is used — otherwise auto-assigns the first free slot.
 - **Force-replace** — `POST /api/play-now` accepts `force: true` to kill an occupied slot before launching. Used by the relay picker modal and the maxSlots=1 auto-replace path. A 1-second delay after `killRelay` prevents the new FFmpeg process from hitting SRS before it has released the previous publisher's RTMP connection.
 - **PID-based process survival** — FFmpeg is spawned detached (`detached: true`, `proc.unref()`), so it is not a child of the Node.js process and is not killed when NSSM stops the service. PIDs are persisted to `relays.json`. On restart, live PIDs are killed and re-spawned to get a fresh proc handle with full crash detection. This means streams survive both a Node.js crash and a full NSSM service restart (with a brief interruption on restart for re-spawn).
-- **FFmpeg logging** — controlled by `settings.ffmpegLogEnabled`. When on, stderr is redirected to `logs/ffmpeg-<slot>.log` via a file descriptor passed to `spawn` (no Node.js stream overhead). `-loglevel warning` filters out progress/stats noise, capturing only warnings and errors. File is truncated at relay start if it exceeds `settings.ffmpegLogMaxSizeMb`. Log directory defaults to `logs/` inside the app folder — safe for NSSM LocalSystem which has no access to user AppData.
-- **Console logging** — all server `console.log` calls go through `serverLog()`, which checks `settings.consoleLogEnabled` before printing. `console.error` is always active. Default is off (useful when running as NSSM service where console output is irrelevant).
+- **Debug logging** — a single `settings.debugLogging` boolean controls all optional logging. When on: `serverLog()` prints to the console, and `spawnRelay()` prepends `-loglevel warning` to FFmpeg args and redirects stderr to `logs/ffmpeg-<slot>.log` via a file descriptor passed to `spawn` (no Node.js stream overhead). `-loglevel warning` filters out progress/stats noise, capturing only warnings and errors. The log file is truncated at relay start if it exceeds `settings.ffmpegLogMaxSizeMb`. Log directory defaults to `logs/` inside the app folder — safe for NSSM LocalSystem which has no access to user AppData. `console.error` is always active regardless of this setting. Defaults to off.
 - **Settings defaults** — loaded via `{ ...SETTINGS_DEFAULTS, ...readJSON(SETTINGS_PATH, {}) }` so new keys are always present even on existing installs without a full file rewrite.
 - **M3U cache is dual-layer** — disk (`m3u_cache.json`) loaded into `m3uMemCache` at startup; all searches run against the in-memory copy.
 - **History cap is 10** — enforced in `saveHistory()`. The Recent Activity card in the UI renders the last 10 entries in a 2-column grid.
