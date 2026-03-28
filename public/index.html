@@ -455,7 +455,7 @@
     .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
     .btn-loading::after { content: ''; position: absolute; top: 50%; left: 50%; margin-top: -7px; margin-left: -7px; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #m3u-get-btn { min-width: 90px; justify-content: center; }
+    #m3u-get-btn, #as-run-btn { min-width: 90px; justify-content: center; }
 
     /* ── Hamburger ── */
     .hamburger {
@@ -739,7 +739,10 @@
         </div>
         <div class="field mt-16">
           <label class="lbl">API Endpoint</label>
-          <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
+          <div class="flex gap-8">
+            <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
+            <button class="btn btn-primary" id="as-run-btn" type="button" style="flex-shrink:0">Run Now</button>
+          </div>
         </div>
         <div id="as-refresh-row" class="flex gap-8 mt-16 align-center">
           <span class="setting-text">Refresh M3U before running</span>
@@ -747,20 +750,16 @@
             <div id="as-refresh-knob" class="toggle-knob"></div>
           </div>
         </div>
-        <div class="flex gap-8 mt-12">
-          <button class="btn btn-primary" id="as-run-btn" type="button">▶ Run Now</button>
-        </div>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-title">📋 Logging</div>
-        </div>
-        <div class="flex gap-8 align-center">
-          <span class="setting-text">Debug Logging</span>
-          <div id="debug-log-toggle" class="toggle-switch">
-            <div class="toggle-knob"></div>
-          </div>
+          <label class="flex gap-8 items-center cursor-pointer">
+            <div id="debug-log-toggle" class="toggle-switch">
+              <div class="toggle-knob"></div>
+            </div>
+          </label>
         </div>
         <div class="form-grid form-grid-2 mt-16">
           <div class="field">
@@ -782,7 +781,7 @@
 
       <div class="card">
         <div class="card-header"><div class="card-title">🔒 Change Password</div></div>
-        <div class="form-grid">
+        <div class="form-grid form-grid-2">
           <div class="field">
             <label class="lbl">New Password</label>
             <input type="password" id="set-pw-new" placeholder="Min 6 characters" autocomplete="new-password"/>
@@ -2093,7 +2092,7 @@ document.getElementById('as-run-btn').addEventListener('click', async () => {
   await POST('/api/auto-scheduler/run');
   toast('Auto-Scheduler triggered!');
   btn.disabled = false;
-  btn.textContent = '▶ Run Now';
+  btn.textContent = 'Run Now';
 });
 
 
