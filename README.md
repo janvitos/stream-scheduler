@@ -15,7 +15,7 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 - **Preferred relay slot** — optionally pin a schedule or the auto-scheduler to a specific slot
 - **In-browser HLS preview** — watch any active relay directly in the dashboard via hls.js
 - **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string; supports a default relay slot
-- **Stream survival** — FFmpeg relay processes survive a Node.js restart; live PIDs are re-adopted on boot
+- **Stream survival** — FFmpeg relay processes are detached from Node.js and survive both a Node.js crash and a full NSSM service restart; live PIDs are re-adopted on boot
 - **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
 - **Playback history** — log of every stream launched with timestamps and status
 - **Activity log** — tracks auto-scheduler activity, M3U refreshes, and relay errors
@@ -139,11 +139,11 @@ http://192.168.1.x:3000
    - **Now** — relays immediately to the next free slot
    - **Once** — pick a date and time
    - **Recurring** — choose Daily / Weekly / Monthly, set a time, and (for weekly/monthly) pick a day
-3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto)
+3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto; hidden when Max Streams is set to 1)
 
 ### Active Relays (Dashboard)
 
-- Each active relay appears as a card showing channel logo, stream name, start time, and slot
+- Each active relay appears as a card showing channel logo, stream name, start time, and slot (slot hidden when Max Streams is 1)
 - **👁 Preview** — shows a live HLS video preview directly in the dashboard
 - **■ Stop** — terminates the FFmpeg relay for that slot
 
@@ -152,9 +152,9 @@ http://192.168.1.x:3000
 - **Run Now** — trigger any schedule immediately
 - **Edit** — update name, time, relay slot, or recurrence
 - **Delete** — remove a schedule immediately (no confirmation)
-- Recurring schedules display a human-readable label (e.g. "Weekly on Monday at 8:00 PM") and show their last run time
+- Recurring schedules show a frequency badge (`DAILY` / `WEEKLY` / `MONTHLY`) and a compact time tag (e.g. `8:00 PM`, `Mon · 8:00 PM`, `1st · 8:00 PM`)
 - One-time schedules remove themselves after firing
-- Schedules are listed newest-first; slot always shown (displays "Auto" if no preferred slot is set)
+- Schedules are listed newest-first; slot badge shown when Max Streams > 1 (displays "Auto" if no preferred slot is set)
 
 ### Auto-Scheduler (Settings)
 
@@ -177,7 +177,7 @@ Matched events are scheduled 10 minutes before their listed start time. If the c
 
 ## Relay Slots
 
-StreamSched supports up to 5 simultaneous FFmpeg relay slots. Configure how many are available in **Settings → Max Simultaneous Streams** (1–5, default 2).
+StreamSched supports up to 5 simultaneous FFmpeg relay slots. Configure how many are available in **Settings → Max Streams** (1–5, default 2).
 
 Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS. When a stream is launched:
 
@@ -185,7 +185,7 @@ Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS. When a
 2. Otherwise the first available slot is auto-assigned
 3. If all slots are full, the launch is rejected and logged to the Activity Log
 
-FFmpeg relay processes run independently of the Node.js server. If the server restarts, any still-running FFmpeg processes are automatically re-adopted — streams are not interrupted.
+FFmpeg processes are spawned detached from Node.js, so they are not killed when the service stops or restarts. If the server restarts, any still-running FFmpeg processes are automatically re-adopted by PID — streams are not interrupted.
 
 ---
 

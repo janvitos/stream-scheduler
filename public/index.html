@@ -657,7 +657,7 @@
           </div>
           <div class="form-grid form-grid-2 mt-16">
             <div class="field">
-              <label class="lbl">Max Simultaneous Streams</label>
+              <label class="lbl">Max Streams</label>
               <select id="max-slots">
                 <option value="1">1</option>
                 <option value="2">2</option>
@@ -665,6 +665,10 @@
                 <option value="4">4</option>
                 <option value="5">5</option>
               </select>
+            </div>
+            <div class="field">
+              <label class="lbl">Default Relay Slot</label>
+              <select id="as-slot"></select>
             </div>
           </div>
         </div>
@@ -687,14 +691,10 @@
               <label class="lbl">Daily Check Time (Eastern)</label>
               <input type="time" id="as-time"/>
             </div>
-            <div class="field">
-              <label class="lbl">API Endpoint</label>
-              <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
-            </div>
-            <div class="field">
-              <label class="lbl">Default Relay Slot</label>
-              <select id="as-slot"></select>
-            </div>
+          </div>
+          <div class="field mt-16">
+            <label class="lbl">API Endpoint</label>
+            <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
           </div>
           <div id="as-refresh-row" class="flex gap-8 mt-16 align-center">
             <span class="setting-text">Refresh M3U before running</span>
@@ -994,9 +994,9 @@ function makeSchedItem(s) {
         ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-time">${fmtDt(s.runAt)}</span>`:''}
         ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(describeRecurrence(s))}</span>`:''}
         ${channelTag(sChannel)}
-        <span class="item-tag tag-sched-type">${s.scheduleType==='cron'?'RECURRING':'ONE-TIME'}</span>
+        <span class="item-tag tag-sched-type">${s.scheduleType==='cron'?(s.frequency||'recurring').toUpperCase():'ONE-TIME'}</span>
         ${s.lastRun?`<span class="item-tag tag-time">Last: ${fmtDt(s.lastRun)}</span>`:''}
-        <span class="item-tag tag-slot">${esc(s.preferredSlot || 'Auto')}</span>
+        ${parseInt(document.getElementById('max-slots')?.value||'2')>1?`<span class="item-tag tag-slot">${esc(s.preferredSlot || 'Auto')}</span>`:''}
       </div>
     </div>
     <div class="sched-actions">
@@ -1120,10 +1120,10 @@ function describeRecurrence(s) {
   const ampm = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 || 12;
   const timeStr = `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  if (s.frequency === 'daily')   return `Daily at ${timeStr}`;
-  if (s.frequency === 'weekly')  return `Weekly on ${days[s.recurDay] || ''} at ${timeStr}`;
-  if (s.frequency === 'monthly') return `Monthly on the ${ordinal(s.recurDay || 1)} at ${timeStr}`;
+  const shortDays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  if (s.frequency === 'daily')   return timeStr;
+  if (s.frequency === 'weekly')  return `${shortDays[s.recurDay] || ''} · ${timeStr}`;
+  if (s.frequency === 'monthly') return `${ordinal(s.recurDay || 1)} · ${timeStr}`;
   return s.cronExpr || 'Recurring';
 }
 
@@ -1144,6 +1144,28 @@ function populateSlotDropdown(id, selectedSlot) {
     opt.textContent = slot;
     if (slot === selectedSlot) opt.selected = true;
     sel.appendChild(opt);
+  }
+}
+
+function updateSlotVisibility() {
+  const max  = parseInt(document.getElementById('max-slots')?.value || '2');
+  const show = max > 1;
+
+  // Modal slot pickers — hide entirely when only one slot
+  ['sm-slot', 'am-slot'].forEach(id => {
+    const sel   = document.getElementById(id);
+    const field = sel?.closest('.field');
+    if (field) field.style.display = show ? '' : 'none';
+    if (!show && sel) sel.value = 'stream01';
+  });
+
+  // Auto-scheduler Default Relay Slot — always visible; repopulate with correct
+  // count (fixes race with loadAutoScheduler), then disable + grey when max = 1
+  const asSlot = document.getElementById('as-slot');
+  if (asSlot) {
+    populateSlotDropdown('as-slot', show ? asSlot.value : 'stream01');
+    asSlot.disabled      = !show;
+    asSlot.style.opacity = show ? '' : '0.45';
   }
 }
 
@@ -1325,6 +1347,7 @@ async function loadCacheInfo() {
     document.getElementById('srs-url').value       = settingsRes.srsUrl      || '';
     document.getElementById('srs-watch-url').value = settingsRes.srsWatchUrl || '';
     document.getElementById('max-slots').value      = String(settingsRes.maxSlots ?? 2);
+    updateSlotVisibility();
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1445,6 +1468,7 @@ document.getElementById('srs-watch-url').addEventListener('input', debounce(asyn
 }, 1500));
 document.getElementById('max-slots').addEventListener('change', async () => {
   await PUT('/api/settings', { maxSlots: parseInt(document.getElementById('max-slots').value) || 2 });
+  updateSlotVisibility();
   toast('Max streams saved');
 });
 
@@ -1646,7 +1670,7 @@ function makeRelayCard(relay) {
         <div class="item-meta">
           <span class="item-tag tag-time">${fmtDt(relay.startedAt)}</span>
           ${channelTag(channel)}
-          <span class="item-tag tag-slot">${esc(relay.slot)}</span>
+          ${parseInt(document.getElementById('max-slots')?.value||'2')>1?`<span class="item-tag tag-slot">${esc(relay.slot)}</span>`:''}
         </div>
       </div>
       <div class="np-header-actions">
