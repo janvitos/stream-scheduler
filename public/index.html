@@ -37,12 +37,27 @@
       --radius:       10px;
     }
     html, body { height: 100%; }
+    html {
+      background: radial-gradient(ellipse at 60% 40%, #0e1016 0%, #060709 100%);
+      padding: 24px 24px 0;
+      box-sizing: border-box;
+    }
     body {
       background: var(--bg);
       color: var(--text);
       font-family: 'Inter', sans-serif;
       display: flex;
       overflow: hidden;
+      max-width: 1100px;
+      margin: 0 auto;
+      height: 100%;
+      width: 100%;
+      border-radius: 14px 14px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      box-shadow:
+        0 8px 16px rgba(0,0,0,.4),
+        0 32px 80px rgba(0,0,0,.6);
     }
 
     /* ── Scrollbar ── */
@@ -58,9 +73,10 @@
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      height: 100dvh;
+      height: 100%;
       position: relative;
       z-index: 10;
+      border-top-left-radius: 13px;
     }
     .sb-logo {
       padding: 22px 18px 18px;
@@ -76,7 +92,7 @@
     .sb-logo-name { font-weight: 800; font-size: 15px; }
     .sb-logo-ver  { font-size: 9px; color: var(--muted); font-family: 'Inter', sans-serif; }
 
-    .sb-nav { flex: 1; padding: 12px 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .sb-nav { flex: 1; padding: 12px 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
     .sb-section { padding: 8px 14px 4px; font-size: 9px; font-weight: 700; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
     .sb-item {
       display: flex; align-items: center; gap: 10px;
@@ -176,8 +192,15 @@
       gap: 20px;
       min-width: 0;
     }
+    .card-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
     @media (max-width: 768px) {
       .dashboard-grid { grid-template-columns: 1fr; }
+      .card-row { grid-template-columns: 1fr; }
     }
     .card {
       background: var(--surface);
@@ -287,6 +310,11 @@
 
     /* ── Shared item row ── */
     .item-list  { display: flex; flex-direction: column; gap: 8px; }
+    .item-list--grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .item-list--grid > * { min-width: 0; }
+    @media (max-width: 900px) {
+      .channel-list, .item-list--grid { grid-template-columns: 1fr; }
+    }
     .media-row  {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -323,7 +351,8 @@
     .sched-btn-toggle.disabled { color: var(--muted); }
 
     /* ── M3U search ── */
-    .channel-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+    .channel-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 400px; overflow-y: auto; }
+    .channel-list > * { min-width: 0; }
     .ch-card { cursor: pointer; transition: background .15s, border-color .15s; }
     .ch-card:hover { background: rgba(37,44,54,0.5); border-color: var(--accent-dim); }
     .item-logo { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
@@ -454,7 +483,8 @@
 
     /* ── Mobile (≤ 640px) ── */
     @media (max-width: 640px) {
-      body { overflow: hidden; }
+      html { padding: 0; }
+      body { overflow: hidden; border-radius: 0; border: none; box-shadow: none; }
 
       /* Sidebar becomes a slide-in drawer */
       #sidebar {
@@ -542,9 +572,9 @@
     <div class="sb-item" data-page="dashboard">
       <span class="sb-icon">🏠</span> Dashboard
     </div>
-
-
-
+    <div class="sb-item" data-page="activity-log">
+      <span class="sb-icon">🕐</span> Activity Log
+    </div>
     <div class="sb-item" data-page="settings">
       <span class="sb-icon">⚙️</span> Settings
     </div>
@@ -570,51 +600,42 @@
 
   <!-- ── Page: Dashboard ── -->
   <div class="page" id="page-dashboard">
-    <div class="dashboard-grid">
+    <div class="dashboard-col">
 
-      <!-- Left column: M3U Source, Search, Preview -->
-      <div class="dashboard-col">
-
-        <div class="card">
-          <div class="card-header"><div class="card-title">🔍 Search Channels</div></div>
-          <div class="flex gap-8">
-            <input type="text" id="m3u-search" placeholder="Channel name…" class="flex-1" disabled/>
-          </div>
-          <div class="help mt-8" id="m3u-search-help" style="margin-bottom:8px">Download or load a cached M3U file first to enable search.</div>
-          <div id="m3u-results-wrap" style="display:none">
-            <div class="channel-list" id="channel-list"></div>
-          </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🔍 Search Channels</div></div>
+        <div class="flex gap-8">
+          <input type="text" id="m3u-search" placeholder="Channel name…" class="flex-1" disabled/>
         </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">📡 Active Relays</div>
-          </div>
-          <div id="relay-list">
-            <span class="no-stream-active">// no active relays</span>
-          </div>
+        <div class="help mt-8" id="m3u-search-help" style="margin-bottom:8px">Download or load a cached M3U file first to enable search.</div>
+        <div id="m3u-results-wrap" style="display:none">
+          <div class="channel-list" id="channel-list"></div>
         </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">🕐 Recent Activity</div>
-          </div>
-          <div id="recent-history"></div>
-        </div>
-
       </div>
 
-      <!-- Right column: Schedules -->
-      <div class="dashboard-col">
-
-        <div class="card">
-          <div class="card-header"><div class="card-title">📅 Schedules</div></div>
-          <div id="sched-list-wrap">
-            <div class="empty"><div class="empty-icon">◷</div><p>No schedules yet. Click "New Schedule" to add one.</p></div>
-          </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📡 Active Relays</div>
         </div>
-
+        <div id="relay-list">
+          <span class="no-stream-active">// no active relays</span>
+        </div>
       </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🕐 Recent Activity</div>
+        </div>
+        <div id="recent-history"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">📅 Schedules</div></div>
+        <div id="sched-list-wrap">
+          <div class="empty"><div class="empty-icon">◷</div><p>No schedules yet. Click "New Schedule" to add one.</p></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -622,171 +643,171 @@
 
 
 
+  <!-- ── Page: Activity Log ── -->
+  <div class="page" id="page-activity-log">
+    <div class="dashboard-col">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🕐 Activity Log</div>
+        </div>
+        <div id="as-log"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Page: Settings ── -->
   <div class="page" id="page-settings">
-    <div class="dashboard-grid">
-      <div class="dashboard-col">
+    <div class="dashboard-col">
 
-        <div class="card">
-          <div class="card-header"><div class="card-title">📡 Xtream / M3U Source</div></div>
-          <div class="form-grid">
-            <div class="field">
-              <label class="lbl">M3U or Xtream URL</label>
-              <div class="flex gap-8">
-                <input type="text" id="m3u-url" name="m3u-url" placeholder="http://server/get.php?username=X&password=Y&type=m3u_plus&output=ts" class="flex-1"/>
-                <button class="btn btn-primary" id="m3u-get-btn" type="button">Get</button>
-              </div>
-              <div class="help" id="m3u-cache-hint"></div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📡 Xtream / M3U Source</div></div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="lbl">M3U or Xtream URL</label>
+            <div class="flex gap-8">
+              <input type="text" id="m3u-url" name="m3u-url" placeholder="http://server/get.php?username=X&password=Y&type=m3u_plus&output=ts" class="flex-1"/>
+              <button class="btn btn-primary" id="m3u-get-btn" type="button">Get</button>
             </div>
-            <div id="m3u-progress-wrap" style="display:none">
-              <div class="flex mt-8" style="justify-content:space-between;margin-bottom:8px">
-                <span class="lbl" id="m3u-progress-label">Downloading…</span>
-                <span class="inter text-sm" id="m3u-progress-pct" style="color:var(--accent)"></span>
-              </div>
-              <div class="progress-track">
-                <div id="m3u-progress-bar" class="progress-fill"></div>
-              </div>
-              <div class="inter text-sm status-label" style="margin-top:4px" id="m3u-progress-bytes"></div>
+            <div class="help" id="m3u-cache-hint"></div>
+          </div>
+          <div id="m3u-progress-wrap" style="display:none">
+            <div class="flex mt-8" style="justify-content:space-between;margin-bottom:8px">
+              <span class="lbl" id="m3u-progress-label">Downloading…</span>
+              <span class="inter text-sm" id="m3u-progress-pct" style="color:var(--accent)"></span>
             </div>
-            <div id="m3u-error"   class="msg-box msg-error"></div>
-            <div id="m3u-success" class="msg-box msg-success"></div>
-            <div class="flex gap-8 mt-8 align-center" style="flex-wrap:wrap">
-              <span class="setting-text">Auto-refresh daily at</span>
-              <input type="time" id="m3u-refresh-time" disabled/>
-              <div id="m3u-refresh-toggle" class="toggle-switch">
-                <div id="m3u-refresh-knob" class="toggle-knob"></div>
-              </div>
+            <div class="progress-track">
+              <div id="m3u-progress-bar" class="progress-fill"></div>
+            </div>
+            <div class="inter text-sm status-label" style="margin-top:4px" id="m3u-progress-bytes"></div>
+          </div>
+          <div id="m3u-error"   class="msg-box msg-error"></div>
+          <div id="m3u-success" class="msg-box msg-success"></div>
+          <div class="flex gap-8 mt-8 align-center" style="flex-wrap:wrap">
+            <span class="setting-text">Auto-refresh daily at</span>
+            <input type="time" id="m3u-refresh-time" disabled/>
+            <div id="m3u-refresh-toggle" class="toggle-switch">
+              <div id="m3u-refresh-knob" class="toggle-knob"></div>
             </div>
           </div>
         </div>
-
-        <div class="card">
-          <div class="card-header"><div class="card-title">📡 SRS Relay Server</div></div>
-          <div class="form-grid form-grid-2">
-            <div class="field">
-              <label class="lbl">RTMP Input URL</label>
-              <input type="text" id="srs-url" placeholder="e.g. rtmp://192.168.1.125/live"/>
-            </div>
-            <div class="field">
-              <label class="lbl">Watch Base URL</label>
-              <input type="text" id="srs-watch-url" placeholder="e.g. https://stream.ipnoze.com/live"/>
-            </div>
-          </div>
-          <div class="form-grid form-grid-2 mt-16">
-            <div class="field">
-              <label class="lbl">Max Streams</label>
-              <select id="max-slots">
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="lbl">Default Relay Slot</label>
-              <select id="as-slot"></select>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">🤖 Auto-Scheduler</div>
-            <label class="flex gap-8 items-center cursor-pointer">
-              <div id="as-toggle" class="toggle-switch">
-                <div id="as-knob" class="toggle-knob"></div>
-              </div>
-            </label>
-          </div>
-          <div class="form-grid form-grid-2">
-            <div class="field">
-              <label class="lbl">Search String</label>
-              <input type="text" id="as-search" placeholder="e.g. Texas Tech"/>
-            </div>
-            <div class="field">
-              <label class="lbl">Daily Check Time (Eastern)</label>
-              <input type="time" id="as-time"/>
-            </div>
-          </div>
-          <div class="field mt-16">
-            <label class="lbl">API Endpoint</label>
-            <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
-          </div>
-          <div id="as-refresh-row" class="flex gap-8 mt-16 align-center">
-            <span class="setting-text">Refresh M3U before running</span>
-            <div id="as-refresh-toggle" class="toggle-switch">
-              <div id="as-refresh-knob" class="toggle-knob"></div>
-            </div>
-          </div>
-          <div class="flex gap-8 mt-12">
-            <button class="btn btn-primary" id="as-run-btn" type="button">▶ Run Now</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">📋 Logging</div>
-          </div>
-          <div class="flex gap-8 align-center">
-            <span class="setting-text">FFmpeg Logging</span>
-            <div id="ffmpeg-log-toggle" class="toggle-switch">
-              <div class="toggle-knob"></div>
-            </div>
-          </div>
-          <div class="form-grid form-grid-2 mt-16">
-            <div class="field">
-              <label class="lbl">Log Directory</label>
-              <input type="text" id="ffmpeg-log-path" autocomplete="off"/>
-            </div>
-            <div class="field">
-              <label class="lbl">Max File Size</label>
-              <select id="ffmpeg-log-max-mb">
-                <option value="1">1 MB</option>
-                <option value="10">10 MB</option>
-                <option value="20">20 MB</option>
-                <option value="50">50 MB</option>
-                <option value="100">100 MB</option>
-              </select>
-            </div>
-          </div>
-          <div class="flex gap-8 mt-16 align-center">
-            <span class="setting-text">Console Logging</span>
-            <div id="console-log-toggle" class="toggle-switch">
-              <div class="toggle-knob"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><div class="card-title">🔒 Change Password</div></div>
-          <div class="form-grid">
-            <div class="field">
-              <label class="lbl">New Password</label>
-              <input type="password" id="set-pw-new" placeholder="Min 6 characters" autocomplete="new-password"/>
-            </div>
-            <div class="field">
-              <label class="lbl">Confirm Password</label>
-              <input type="password" id="set-pw-confirm" placeholder="Repeat new password" autocomplete="new-password"/>
-            </div>
-          </div>
-          <div id="pw-result" class="mt-8"></div>
-          <div class="mt-12">
-            <button class="btn btn-primary" id="save-pw-btn" type="button">Change Password</button>
-          </div>
-        </div>
-
       </div>
-      <div class="dashboard-col">
 
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">🕐 Activity Log</div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📡 SRS Relay Server</div></div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label class="lbl">RTMP Input URL</label>
+            <input type="text" id="srs-url" placeholder="e.g. rtmp://192.168.1.125/live"/>
           </div>
-          <div id="as-log"></div>
+          <div class="field">
+            <label class="lbl">Watch Base URL</label>
+            <input type="text" id="srs-watch-url" placeholder="e.g. https://stream.ipnoze.com/live"/>
+          </div>
         </div>
-
+        <div class="form-grid form-grid-2 mt-16">
+          <div class="field">
+            <label class="lbl">Max Streams</label>
+            <select id="max-slots">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="lbl">Default Relay Slot</label>
+            <select id="as-slot"></select>
+          </div>
+        </div>
       </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🤖 Auto-Scheduler</div>
+          <label class="flex gap-8 items-center cursor-pointer">
+            <div id="as-toggle" class="toggle-switch">
+              <div id="as-knob" class="toggle-knob"></div>
+            </div>
+          </label>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label class="lbl">Search String</label>
+            <input type="text" id="as-search" placeholder="e.g. Texas Tech"/>
+          </div>
+          <div class="field">
+            <label class="lbl">Daily Check Time (Eastern)</label>
+            <input type="time" id="as-time"/>
+          </div>
+        </div>
+        <div class="field mt-16">
+          <label class="lbl">API Endpoint</label>
+          <input type="text" id="as-endpoint" placeholder="https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"/>
+        </div>
+        <div id="as-refresh-row" class="flex gap-8 mt-16 align-center">
+          <span class="setting-text">Refresh M3U before running</span>
+          <div id="as-refresh-toggle" class="toggle-switch">
+            <div id="as-refresh-knob" class="toggle-knob"></div>
+          </div>
+        </div>
+        <div class="flex gap-8 mt-12">
+          <button class="btn btn-primary" id="as-run-btn" type="button">▶ Run Now</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📋 Logging</div>
+        </div>
+        <div class="flex gap-8 align-center">
+          <span class="setting-text">FFmpeg Logging</span>
+          <div id="ffmpeg-log-toggle" class="toggle-switch">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2 mt-16">
+          <div class="field">
+            <label class="lbl">Log Directory</label>
+            <input type="text" id="ffmpeg-log-path" autocomplete="off"/>
+          </div>
+          <div class="field">
+            <label class="lbl">Max File Size</label>
+            <select id="ffmpeg-log-max-mb">
+              <option value="1">1 MB</option>
+              <option value="10">10 MB</option>
+              <option value="20">20 MB</option>
+              <option value="50">50 MB</option>
+              <option value="100">100 MB</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-8 mt-16 align-center">
+          <span class="setting-text">Console Logging</span>
+          <div id="console-log-toggle" class="toggle-switch">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">🔒 Change Password</div></div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="lbl">New Password</label>
+            <input type="password" id="set-pw-new" placeholder="Min 6 characters" autocomplete="new-password"/>
+          </div>
+          <div class="field">
+            <label class="lbl">Confirm Password</label>
+            <input type="password" id="set-pw-confirm" placeholder="Repeat new password" autocomplete="new-password"/>
+          </div>
+        </div>
+        <div id="pw-result" class="mt-8"></div>
+        <div class="mt-12">
+          <button class="btn btn-primary" id="save-pw-btn" type="button">Change Password</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -924,7 +945,7 @@ let history   = [];
 /* ═══════════════════════════════════════════
    Navigation
 ═══════════════════════════════════════════ */
-const pages = { dashboard:'Dashboard', settings:'Settings' };
+const pages = { dashboard:'Dashboard', 'activity-log':'Activity Log', settings:'Settings' };
 document.querySelectorAll('.sb-item[data-page]').forEach(el => {
   el.addEventListener('click', () => { navTo(el.dataset.page); closeSidebar(); });
 });
@@ -958,6 +979,9 @@ function navTo(page) {
     const pg = document.getElementById('page-settings');
     pg.style.visibility = 'hidden';
     loadAutoScheduler().then(() => { pg.style.visibility = 'visible'; });
+  }
+  if (page === 'activity-log') {
+    renderAsLog();
   }
 }
 
@@ -1050,7 +1074,6 @@ function makeSchedItem(s) {
     ${logoImg(s.logo)}
     <div class="item-info">
       <div class="item-name">${esc(sTitle || s.name)}</div>
-      <div class="item-url">${esc(s.url)}</div>
       <div class="item-meta">
         ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-time">${fmtDt(s.runAt)}</span>`:''}
         ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(describeRecurrence(s))}</span>`:''}
@@ -1285,11 +1308,11 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
    Dashboard
 ═══════════════════════════════════════════ */
 async function renderDashboard() {
-  // Recent activity — always show last 5 entries
+  // Recent activity — show last 10 entries in a 2-column grid
   const rh = document.getElementById('recent-history');
-  const recent = history.slice(0, 5);
+  const recent = history.slice(0, 10);
   if (!recent.length) { rh.innerHTML = '<div class="empty"><div class="empty-icon">☰</div><p>No recent activity.</p></div>'; return; }
-  rh.innerHTML = '<div class="item-list"></div>';
+  rh.innerHTML = '<div class="item-list item-list--grid"></div>';
   const hl = rh.querySelector('.item-list');
   recent.forEach(h => hl.appendChild(makeHistoryItem(h)));
 }
@@ -1310,7 +1333,6 @@ function makeHistoryItem(h) {
     ${logoImg(h.logo)}
     <div class="item-info">
       <div class="item-name">${esc(hTitle || h.scheduleName || 'Unknown')}</div>
-      ${h.url ? `<div class="item-url">${esc(h.url)}</div>` : ''}
       <div class="item-meta">
         <span class="item-tag tag-time">${fmtDt(h.startedAt)}</span>
         ${channelTag(hChannel)}
@@ -1648,7 +1670,6 @@ function renderChannels(channels, count, total) {
       ${logoImg(ch.logo)}
       <div class="item-info">
         <div class="item-name">${esc(chTitle || ch.name)}</div>
-        <div class="item-url">${esc(ch.url)}</div>
         ${(chChannel || ch.eventTime) ? `<div class="item-meta">${ch.eventTime ? `<span class="item-tag tag-time">${fmtDt(ch.eventTime)}</span>` : ''}${channelTag(chChannel)}</div>` : ''}
       </div>`;
     div.addEventListener('click', () => openAddModal(ch));
@@ -1838,7 +1859,6 @@ function makeRelayCard(relay) {
       ${logoImg(relay.logo)}
       <div class="item-info">
         <div class="item-name">${esc(title || relay.name)}</div>
-        ${relay.url ? `<div class="item-url">${esc(relay.url)}</div>` : ''}
         <div class="item-meta">
           <span class="item-tag tag-time">${fmtDt(relay.startedAt)}</span>
           ${channelTag(channel)}
@@ -1977,7 +1997,7 @@ function renderAsLog() {
     log.innerHTML = '<div class="empty" style="padding:20px"><p>No activity yet.</p></div>';
     return;
   }
-  log.innerHTML = '<div class="item-list">' + asData.activityLog.map(e => {
+  log.innerHTML = '<div class="item-list item-list--grid">' + asData.activityLog.map(e => {
     const icons = { success: '✅', info: 'ℹ️', warn: '⚠️', error: '❌' };
     const icon = icons[e.type] || 'ℹ️';
     return `<div class="media-row">
@@ -2027,7 +2047,7 @@ const connectDashboardSSE = makeSSE('/api/events', ({ type, relays }) => {
 const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
   asData.activityLog = asData.activityLog || [];
   asData.activityLog.unshift(entry);
-  if (asData.activityLog.length > 10) asData.activityLog.length = 10;
+  if (asData.activityLog.length > 100) asData.activityLog.length = 100;
   renderAsLog();
 });
 

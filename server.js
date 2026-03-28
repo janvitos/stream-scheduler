@@ -80,9 +80,9 @@ const saveHistory       = () => { history = history.slice(-MAX_HISTORY); writeJS
 const saveSettings      = () => writeJSON(SETTINGS_PATH, settings);
 const saveAutoScheduler = () => writeJSON(AUTO_SCHED_PATH, autoScheduler);
 
-// Trim activity log to 10 on startup in case it has excess entries
-if (autoScheduler.activityLog.length > 10) {
-  autoScheduler.activityLog = autoScheduler.activityLog.slice(-10);
+// Trim activity log to 100 on startup in case it has excess entries
+if (autoScheduler.activityLog.length > 100) {
+  autoScheduler.activityLog = autoScheduler.activityLog.slice(-100);
   saveAutoScheduler();
 }
 
@@ -618,7 +618,7 @@ function pushDashboardEvent(type, data = {}) {
 function logAutoActivity(type, message) {
   const entry = { type, message, timestamp: new Date().toISOString() };
   autoScheduler.activityLog.unshift(entry);
-  if (autoScheduler.activityLog.length > 10) autoScheduler.activityLog.pop();
+  if (autoScheduler.activityLog.length > 100) autoScheduler.activityLog.pop();
   saveAutoScheduler();
   serverLog(`[AutoSched] ${message}`);
   broadcastSSE(autoSchedSSEClients, entry);
