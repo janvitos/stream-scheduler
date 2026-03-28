@@ -54,15 +54,14 @@ const SETTINGS_DEFAULTS = {
   maxSlots:           2,
   m3uAutoRefresh:     false,
   m3uRefreshTime:     '06:00',
-  ffmpegLogEnabled:   false,
+  debugLogging:       false,
   ffmpegLogPath:      path.join(__dirname, 'logs'),
   ffmpegLogMaxSizeMb: 10,
-  consoleLogEnabled:  false
 };
 let settings = { ...SETTINGS_DEFAULTS, ...readJSON(SETTINGS_PATH, {}) };
 
 function serverLog(...args) {
-  if (settings.consoleLogEnabled) console.log(...args);
+  if (settings.debugLogging) console.log(...args);
 }
 
 // ─── Relay state ──────────────────────────────────────────────────────────────
@@ -486,7 +485,7 @@ function findFreeSlot(preferred) {
 function spawnRelay(slot, s) {
   const outputUrl = `${settings.srsUrl.replace(/\/$/, '')}/${slot}`;
   const args = [
-    ...(settings.ffmpegLogEnabled ? ['-loglevel', 'warning'] : []),
+    ...(settings.debugLogging ? ['-loglevel', 'warning'] : []),
     '-re',
     '-fflags', '+genpts+discardcorrupt',
     '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
@@ -500,7 +499,7 @@ function spawnRelay(slot, s) {
   ];
 
   let stderrTarget = 'ignore';
-  if (settings.ffmpegLogEnabled) {
+  if (settings.debugLogging) {
     try {
       const logDir  = settings.ffmpegLogPath || path.join(__dirname, 'logs');
       const maxBytes = (settings.ffmpegLogMaxSizeMb || 10) * 1024 * 1024;

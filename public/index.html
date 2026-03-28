@@ -757,18 +757,18 @@
           <div class="card-title">📋 Logging</div>
         </div>
         <div class="flex gap-8 align-center">
-          <span class="setting-text">FFmpeg Logging</span>
-          <div id="ffmpeg-log-toggle" class="toggle-switch">
+          <span class="setting-text">Debug Logging</span>
+          <div id="debug-log-toggle" class="toggle-switch">
             <div class="toggle-knob"></div>
           </div>
         </div>
         <div class="form-grid form-grid-2 mt-16">
           <div class="field">
-            <label class="lbl">Log Directory</label>
+            <label class="lbl">FFmpeg Log Directory</label>
             <input type="text" id="ffmpeg-log-path" autocomplete="off"/>
           </div>
           <div class="field">
-            <label class="lbl">Max File Size</label>
+            <label class="lbl">FFmpeg Log Max File Size</label>
             <select id="ffmpeg-log-max-mb">
               <option value="1">1 MB</option>
               <option value="10">10 MB</option>
@@ -776,12 +776,6 @@
               <option value="50">50 MB</option>
               <option value="100">100 MB</option>
             </select>
-          </div>
-        </div>
-        <div class="flex gap-8 mt-16 align-center">
-          <span class="setting-text">Console Logging</span>
-          <div id="console-log-toggle" class="toggle-switch">
-            <div class="toggle-knob"></div>
           </div>
         </div>
       </div>
@@ -1398,8 +1392,7 @@ function resetProgress() {
 
 let m3uCachedSourceUrl = '';
 let m3uRefreshEnabled  = false;
-let ffmpegLogEnabled   = false;
-let consoleLogEnabled  = false;
+let debugLogging = false;
 
 function updateGetBtn() {
   const btn = document.getElementById('m3u-get-btn');
@@ -1418,17 +1411,13 @@ function updateM3URefreshToggle() {
   document.getElementById('m3u-refresh-time').disabled = !m3uRefreshEnabled;
 }
 
-function updateFFmpegLogToggle() {
-  setToggleState('ffmpeg-log-toggle', ffmpegLogEnabled);
+function updateDebugLogToggle() {
+  setToggleState('debug-log-toggle', debugLogging);
   ['ffmpeg-log-path', 'ffmpeg-log-max-mb'].forEach(id => {
     const el = document.getElementById(id);
-    el.disabled    = !ffmpegLogEnabled;
-    el.style.opacity = ffmpegLogEnabled ? '' : '0.4';
+    el.disabled      = !debugLogging;
+    el.style.opacity = debugLogging ? '' : '0.4';
   });
-}
-
-function updateConsoleLogToggle() {
-  setToggleState('console-log-toggle', consoleLogEnabled);
 }
 
 
@@ -1460,12 +1449,10 @@ async function loadCacheInfo() {
     document.getElementById('srs-watch-url').value = settingsRes.srsWatchUrl || '';
     document.getElementById('max-slots').value      = String(settingsRes.maxSlots ?? 2);
     updateSlotVisibility();
-    ffmpegLogEnabled  = !!settingsRes.ffmpegLogEnabled;
-    consoleLogEnabled = !!settingsRes.consoleLogEnabled;
+    debugLogging = !!settingsRes.debugLogging;
     document.getElementById('ffmpeg-log-path').value   = settingsRes.ffmpegLogPath      || '';
     document.getElementById('ffmpeg-log-max-mb').value = settingsRes.ffmpegLogMaxSizeMb ?? 10;
-    updateFFmpegLogToggle();
-    updateConsoleLogToggle();
+    updateDebugLogToggle();
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1589,11 +1576,11 @@ document.getElementById('max-slots').addEventListener('change', async () => {
   updateSlotVisibility();
   toast('Max streams saved');
 });
-document.getElementById('ffmpeg-log-toggle').addEventListener('click', async () => {
-  ffmpegLogEnabled = !ffmpegLogEnabled;
-  updateFFmpegLogToggle();
-  await PUT('/api/settings', { ffmpegLogEnabled });
-  toast(ffmpegLogEnabled ? 'FFmpeg logging enabled' : 'FFmpeg logging disabled');
+document.getElementById('debug-log-toggle').addEventListener('click', async () => {
+  debugLogging = !debugLogging;
+  updateDebugLogToggle();
+  await PUT('/api/settings', { debugLogging });
+  toast(debugLogging ? 'Debug logging enabled' : 'Debug logging disabled');
 });
 document.getElementById('ffmpeg-log-path').addEventListener('input', debounce(async () => {
   await PUT('/api/settings', { ffmpegLogPath: document.getElementById('ffmpeg-log-path').value.trim() });
@@ -1602,12 +1589,6 @@ document.getElementById('ffmpeg-log-path').addEventListener('input', debounce(as
 document.getElementById('ffmpeg-log-max-mb').addEventListener('change', async () => {
   await PUT('/api/settings', { ffmpegLogMaxSizeMb: parseInt(document.getElementById('ffmpeg-log-max-mb').value) || 10 });
   toast('Max log size saved');
-});
-document.getElementById('console-log-toggle').addEventListener('click', async () => {
-  consoleLogEnabled = !consoleLogEnabled;
-  updateConsoleLogToggle();
-  await PUT('/api/settings', { consoleLogEnabled });
-  toast(consoleLogEnabled ? 'Console logging enabled' : 'Console logging disabled');
 });
 
 // Search
