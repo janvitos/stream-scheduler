@@ -9,3 +9,6 @@ data/
 
 # Bundled binary (users place this manually per bin/README.txt)
 bin/ffmpeg.exe
+
+# FFmpeg log files
+logs/
