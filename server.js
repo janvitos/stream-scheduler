@@ -731,15 +731,7 @@ async function runAutoScheduler() {
 
     const ch = matching[0];
 
-    let schedHH = hh, schedMin = min, schedRunAt = runAt;
-    if (ch.eventTime) {
-      const [datePart, timePart] = ch.eventTime.split('T');
-      const [evHH, evMM] = timePart.split(':').map(Number);
-      const evWithOffset = evMM + 10;
-      schedHH  = String(evHH + Math.floor(evWithOffset / 60)).padStart(2, '0');
-      schedMin = String(evWithOffset % 60).padStart(2, '0');
-      schedRunAt = `${datePart}T${schedHH}:${schedMin}`;
-    }
+    const schedRunAt = runAt;
 
     const isDuplicate = schedules.some(s =>
       s.url === ch.url && s.runAt && s.runAt.startsWith(`${yyyy}-${mm}-${dd}`)
@@ -764,8 +756,8 @@ async function runAutoScheduler() {
     schedules.push(s);
     saveSchedules();
     registerSchedule(s);
-    const h24 = parseInt(schedHH, 10);
-    const fmtTime = `${h24 % 12 || 12}:${schedMin} ${h24 >= 12 ? 'PM' : 'AM'}`;
+    const h24 = parseInt(hh, 10);
+    const fmtTime = `${h24 % 12 || 12}:${min} ${h24 >= 12 ? 'PM' : 'AM'}`;
     logAutoActivity('success', `Scheduled ${gameName} at ${fmtTime} ET (+10 min) → ${ch.name}`);
   }
 }

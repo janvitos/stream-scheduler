@@ -262,7 +262,7 @@
     .toggle-switch.toggle-on .toggle-knob { left: 17px; opacity: 1; }
     .tag-slot { background: rgba(255,160,50,.15); color: #ffa032; }
     .relay-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
-    #relay-list { display: flex; flex-direction: column; gap: 8px; }
+    #relay-list, #sched-list-wrap { display: flex; flex-direction: column; gap: 8px; }
 
     /* ── Status label ── */
     .status-label { font-size: 11px; color: var(--muted); }
@@ -428,7 +428,7 @@
     .empty {
       text-align: center; padding: 0px 20px 40px; color: var(--muted);
     }
-    .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .5; }
+    .empty-icon { font-size: 40px; margin: 0; opacity: .5; }
     .empty p { font-size: 13px; }
 
     /* ── Toggle switch ── */
@@ -628,7 +628,7 @@
       <div class="card">
         <div class="card-header"><div class="card-title">📅 Schedules</div></div>
         <div id="sched-list-wrap">
-          <div class="empty"><div class="empty-icon">◷</div><p>No schedules yet. Click "New Schedule" to add one.</p></div>
+          <span class="no-stream-active">// no schedules yet</span>
         </div>
       </div>
 
@@ -1054,7 +1054,7 @@ async function loadSchedules() {
 function renderSchedules() {
   const wrap = document.getElementById('sched-list-wrap');
   if (!schedules.length) {
-    wrap.innerHTML = '<div class="empty"><div class="empty-icon">◷</div><p>No schedules yet.</p></div>';
+    wrap.innerHTML = '<span class="no-stream-active">// no schedules yet</span>';
     return;
   }
   wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
