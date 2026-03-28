@@ -92,7 +92,7 @@
     .sb-logo-name { font-weight: 800; font-size: 15px; }
     .sb-logo-ver  { font-size: 9px; color: var(--muted); font-family: 'Inter', sans-serif; }
 
-    .sb-nav { flex: 1; padding: 12px 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .sb-nav { flex: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
     .sb-section { padding: 8px 14px 4px; font-size: 9px; font-weight: 700; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
     .sb-item {
       display: flex; align-items: center; gap: 10px;
@@ -102,7 +102,7 @@
       color: var(--muted2);
       transition: background .15s, color .15s;
       position: relative;
-      margin: 1px 6px;
+      margin: 0;
       border-radius: 7px;
     }
     .sb-item:hover { background: var(--surface2); color: var(--text); }
@@ -110,11 +110,7 @@
       background: rgba(0,229,160,.1);
       color: var(--accent);
     }
-    .sb-item.active::before {
-      content: '';
-      position: absolute; left: -6px; top: 6px; bottom: 6px;
-      width: 3px; background: var(--accent); border-radius: 99px;
-    }
+
     .sb-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
     .sb-badge {
       margin-left: auto;
