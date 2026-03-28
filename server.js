@@ -46,13 +46,22 @@ let autoScheduler = readJSON(AUTO_SCHED_PATH, {
 });
 const MAX_HISTORY = 10;
 let history  = readJSON(HISTORY_PATH, []).slice(-MAX_HISTORY);
-let settings = readJSON(SETTINGS_PATH, {
-  srsUrl:         'rtmp://192.168.1.125/live',
-  srsWatchUrl:    'https://stream.ipnoze.com/live',
-  maxSlots:       2,
-  m3uAutoRefresh: false,
-  m3uRefreshTime: '06:00'
-});
+const SETTINGS_DEFAULTS = {
+  srsUrl:             'rtmp://192.168.1.125/live',
+  srsWatchUrl:        'https://stream.ipnoze.com/live',
+  maxSlots:           2,
+  m3uAutoRefresh:     false,
+  m3uRefreshTime:     '06:00',
+  ffmpegLogEnabled:   false,
+  ffmpegLogPath:      path.join(__dirname, 'logs'),
+  ffmpegLogMaxSizeMb: 10,
+  consoleLogEnabled:  false
+};
+let settings = { ...SETTINGS_DEFAULTS, ...readJSON(SETTINGS_PATH, {}) };
+
+function serverLog(...args) {
+  if (settings.consoleLogEnabled) console.log(...args);
+}
 
 // ─── Relay state ──────────────────────────────────────────────────────────────
 // In-memory map: slot → { slot, name, url, logo, startedAt, pid, proc }
@@ -162,11 +171,13 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 // ── Settings ──────────────────────────────────────────────────────────────────
 app.get('/api/settings', (req, res) => res.json(settings));
 app.put('/api/settings', (req, res) => {
-  const { maxSlots, ...rest } = req.body;
+  const { maxSlots, ffmpegLogMaxSizeMb, ffmpegLogPath, ...rest } = req.body;
   settings = {
     ...settings,
     ...rest,
-    ...(maxSlots !== undefined ? { maxSlots: Math.max(1, Math.min(5, parseInt(maxSlots) || 2)) } : {})
+    ...(maxSlots           !== undefined ? { maxSlots:           Math.max(1, Math.min(5,   parseInt(maxSlots)           || 2))  } : {}),
+    ...(ffmpegLogMaxSizeMb !== undefined ? { ffmpegLogMaxSizeMb: Math.max(1, Math.min(500, parseInt(ffmpegLogMaxSizeMb) || 10)) } : {}),
+    ...(ffmpegLogPath      !== undefined ? { ffmpegLogPath:      (ffmpegLogPath || '').trim() || path.join(__dirname, 'logs')  } : {})
   };
   saveSettings();
   startM3URefreshCron();
@@ -242,10 +253,14 @@ app.delete('/api/schedules/:id', (req, res) => {
 
 // Play now — launches immediately, logs to history, no schedule entry created
 app.post('/api/play-now', async (req, res) => {
-  const { name, url, noHistory, logo } = req.body;
+  const { name, url, noHistory, logo, preferredSlot, force } = req.body;
   if (!url) return res.status(400).json({ error: 'URL required' });
   const resolvedLogo = resolveLogoForUrl(url, logo);
-  const { preferredSlot } = req.body;
+  if (force && preferredSlot && relays.has(preferredSlot)) {
+    killRelay(preferredSlot);
+    // Give SRS time to release the RTMP slot before the new publisher connects
+    await new Promise(r => setTimeout(r, 1000));
+  }
   const s = { id: null, name: name || 'Now', url, noHistory, logo: resolvedLogo, preferredSlot: preferredSlot || null };
   const result = await launchStream(s);
   res.json(result);
@@ -275,7 +290,7 @@ try {
   if (fs.existsSync(M3U_CACHE_PATH)) {
     const raw = fs.readFileSync(M3U_CACHE_PATH, 'utf8');
     m3uMemCache = JSON.parse(raw);
-    console.log(`  M3U cache loaded: ${m3uMemCache.channels.length} channels from ${new Date(m3uMemCache.fetchedAt).toLocaleString()}`);
+    serverLog(`  M3U cache loaded: ${m3uMemCache.channels.length} channels from ${new Date(m3uMemCache.fetchedAt).toLocaleString()}`);
   }
 } catch (e) {
   console.warn('  Could not load M3U disk cache:', e.message);
@@ -469,6 +484,7 @@ function findFreeSlot(preferred) {
 function spawnRelay(slot, s) {
   const outputUrl = `${settings.srsUrl.replace(/\/$/, '')}/${slot}`;
   const args = [
+    ...(settings.ffmpegLogEnabled ? ['-loglevel', 'warning'] : []),
     '-re',
     '-fflags', '+genpts+discardcorrupt',
     '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
@@ -480,26 +496,42 @@ function spawnRelay(slot, s) {
     outputUrl
   ];
 
+  let stderrTarget = 'ignore';
+  if (settings.ffmpegLogEnabled) {
+    try {
+      const logDir  = settings.ffmpegLogPath || path.join(__dirname, 'logs');
+      const maxBytes = (settings.ffmpegLogMaxSizeMb || 10) * 1024 * 1024;
+      fs.mkdirSync(logDir, { recursive: true });
+      const logFile = path.join(logDir, `ffmpeg-${slot}.log`);
+      try { if (fs.statSync(logFile).size >= maxBytes) fs.writeFileSync(logFile, ''); } catch {}
+      stderrTarget = fs.openSync(logFile, 'a');
+    } catch (err) {
+      logAutoActivity('warn', `Could not open FFmpeg log for ${slot}: ${err.message}`);
+    }
+  }
+
   let proc;
   try {
-    proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+    proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', stderrTarget], detached: true });
     proc.unref();
   } catch (e) {
+    if (typeof stderrTarget === 'number') try { fs.closeSync(stderrTarget); } catch {}
     console.error(`[Relay] Failed to spawn FFmpeg for ${slot}:`, e.message);
     return null;
   }
 
-  proc.stderr.on('data', d => {
-    const line = d.toString().split('\n').find(l => /error|failed|rtmp/i.test(l));
-    if (line) console.log(`[Relay:${slot}]`, line.trim());
-  });
+  if (typeof stderrTarget === 'number') fs.closeSync(stderrTarget); // parent closes its fd; child keeps its own
 
   proc.on('error', e => console.error(`[Relay:${slot}] FFmpeg error:`, e.message));
 
   proc.on('exit', (code) => {
-    console.log(`[Relay:${slot}] FFmpeg exited, code: ${code}`);
-    if (code !== 0 && code !== null) {
-      logAutoActivity('error', `Relay ${slot} stopped unexpectedly (exit code ${code})`);
+    serverLog(`[Relay:${slot}] FFmpeg exited, code: ${code}`);
+    if (code === null) {
+      logAutoActivity('warn',  `Relay ${slot} was stopped`);
+    } else if (code === 0) {
+      logAutoActivity('warn',  `Relay ${slot} ended unexpectedly (exit code 0)`);
+    } else {
+      logAutoActivity('error', `Relay ${slot} crashed (exit code ${code})`);
     }
     if (relays.has(slot)) {
       relays.delete(slot);
@@ -565,7 +597,7 @@ async function launchStream(s) {
   const idx = schedules.findIndex(x => x.id === s.id);
   if (idx !== -1) { schedules[idx].lastRun = startedAt; saveSchedules(); }
 
-  console.log(`[Relay] Spawned ${slot} for ${s.url}`);
+  serverLog(`[Relay] Spawned ${slot} for ${s.url}`);
   return { ok: true, slot };
 }
 
@@ -588,7 +620,7 @@ function logAutoActivity(type, message) {
   autoScheduler.activityLog.unshift(entry);
   if (autoScheduler.activityLog.length > 10) autoScheduler.activityLog.pop();
   saveAutoScheduler();
-  console.log(`[AutoSched] ${message}`);
+  serverLog(`[AutoSched] ${message}`);
   broadcastSSE(autoSchedSSEClients, entry);
 }
 
@@ -597,13 +629,13 @@ async function refreshM3U() {
     throw new Error('No M3U source URL in cache — please load M3U manually first.');
   }
   const url = m3uMemCache.sourceUrl;
-  console.log('[M3U] Refreshing from:', url);
+  serverLog('[M3U] Refreshing from:', url);
   const resp = await axios.get(url, { timeout: 120000, responseType: 'arraybuffer' });
   const raw = Buffer.from(resp.data).toString('utf8');
   const channels = parseM3U(raw);
   m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: resp.data.byteLength };
   await fs.promises.writeFile(M3U_CACHE_PATH, JSON.stringify(m3uMemCache));
-  console.log(`[M3U] Refreshed: ${channels.length} channels`);
+  serverLog(`[M3U] Refreshed: ${channels.length} channels`);
   return channels.length;
 }
 
@@ -743,7 +775,7 @@ function startAutoSchedCron() {
   if (!autoScheduler.enabled || !autoScheduler.checkTime) return;
   const [h, m] = autoScheduler.checkTime.split(':');
   autoSchedCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, runAutoScheduler, { timezone: 'America/New_York' });
-  console.log(`[AutoSched] Cron set for ${autoScheduler.checkTime} ET daily`);
+  serverLog(`[AutoSched] Cron set for ${autoScheduler.checkTime} ET daily`);
 }
 
 let m3uRefreshCronJob = null;
@@ -752,18 +784,18 @@ function startM3URefreshCron() {
   if (!settings.m3uAutoRefresh || !settings.m3uRefreshTime) return;
   const [h, m] = settings.m3uRefreshTime.split(':');
   m3uRefreshCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, async () => {
-    console.log('[M3U] Running scheduled daily refresh…');
+    serverLog('[M3U] Running scheduled daily refresh…');
     logAutoActivity('info', 'Refreshing M3U…');
     try {
       const count = await refreshM3U();
-      console.log(`[M3U] Daily refresh complete — ${count} channels.`);
+      serverLog(`[M3U] Daily refresh complete — ${count} channels.`);
       logAutoActivity('info', `M3U auto-refreshed — ${count} channels loaded`);
     } catch (e) {
       console.warn('[M3U] Daily refresh failed:', e.message);
       logAutoActivity('error', `M3U auto-refresh failed: ${e.message}`);
     }
   });
-  console.log(`[M3U] Auto-refresh cron set for ${settings.m3uRefreshTime} daily`);
+  serverLog(`[M3U] Auto-refresh cron set for ${settings.m3uRefreshTime} daily`);
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────────
@@ -815,26 +847,36 @@ app.post('/api/auto-scheduler/run', async (req, res) => {
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
-// Restore or clean up relay state from previous run
+// Restore relay state from previous run — kill old FFmpeg and re-spawn to get
+// a full proc handle with exit event coverage (Option 2: brief stream interruption
+// on restart in exchange for complete crash detection going forward).
 const prevRelays = readJSON(RELAYS_PATH, []);
 if (prevRelays.length > 0) {
-  let restored = 0;
-  let cleared  = 0;
+  let respawned = 0;
+  let cleared   = 0;
   for (const r of prevRelays) {
     let alive = false;
     if (r.pid) {
       try { process.kill(r.pid, 0); alive = true; } catch {}
     }
     if (alive) {
-      // Process still running — restore state (no proc handle, use pid for kill)
-      relays.set(r.slot, { ...r, proc: null });
-      restored++;
+      // Kill the old detached process, then re-spawn with the same parameters
+      // so we get a fresh proc handle and full exit/crash event coverage.
+      try { process.kill(r.pid, 'SIGTERM'); } catch {}
+      const proc = spawnRelay(r.slot, r);
+      if (proc) {
+        relays.set(r.slot, { slot: r.slot, name: r.name, url: r.url, logo: r.logo || null, startedAt: r.startedAt, pid: proc.pid, proc });
+        respawned++;
+      } else {
+        logAutoActivity('error', `Failed to re-spawn relay for ${r.slot} on startup`);
+        cleared++;
+      }
     } else {
       cleared++;
     }
   }
-  if (restored > 0) console.log(`[Relay] Restored ${restored} active relay(s) from previous session`);
-  if (cleared  > 0) console.log(`[Relay] Cleared ${cleared} stale relay(s) from previous session`);
+  if (respawned > 0) serverLog(`[Relay] Re-spawned ${respawned} relay(s) from previous session`);
+  if (cleared   > 0) serverLog(`[Relay] Cleared ${cleared} stale relay(s) from previous session`);
   writeJSON(RELAYS_PATH, getRelayStates());
 }
 
@@ -846,7 +888,7 @@ startM3URefreshCron();
 const server = require('http').createServer(app);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n✓ Stream Scheduler running at http://0.0.0.0:${PORT}`);
-  console.log(`  Open http://localhost:${PORT} in your browser\n`);
+  serverLog(`\n✓ Stream Scheduler running at http://0.0.0.0:${PORT}`);
+  serverLog(`  Open http://localhost:${PORT} in your browser\n`);
   logAutoActivity('info', 'Service started');
 });

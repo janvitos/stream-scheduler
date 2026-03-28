@@ -1,0 +1,4 @@
+[h264 @ 0000017e22973e00] non-existing SPS 0 referenced in buffering period
+    Last message repeated 1 times
+[h264 @ 0000017e22973e00] Increasing reorder buffer to 2
+[h264 @ 0000017e22973e00] Increasing reorder buffer to 3

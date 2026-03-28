@@ -13,12 +13,15 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 - **Recurring schedules** — schedule daily, weekly, or monthly recurrences via a simple time/day picker
 - **Multi-stream relay** — up to 5 simultaneous FFmpeg relay slots (`stream01`–`stream05`), configurable in Settings
 - **Preferred relay slot** — optionally pin a schedule or the auto-scheduler to a specific slot
+- **Relay slot picker** — when launching immediately with multiple slots available, a picker modal shows the state of each slot; with a single slot configured, the current stream is replaced automatically
 - **In-browser HLS preview** — watch any active relay directly in the dashboard via hls.js
 - **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string; supports a default relay slot
-- **Stream survival** — FFmpeg relay processes are detached from Node.js and survive both a Node.js crash and a full NSSM service restart; live PIDs are re-adopted on boot
+- **Stream survival** — FFmpeg relay processes are detached from Node.js and survive both a Node.js crash and a full NSSM service restart; live processes are re-spawned on boot for full crash detection
+- **FFmpeg logging** — optional per-slot log files capturing warnings and errors; configurable directory and max file size
+- **Console logging** — toggle server-side console output on or off (useful when running as a background service)
 - **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
 - **Playback history** — log of every stream launched with timestamps and status
-- **Activity log** — tracks auto-scheduler activity, M3U refreshes, and relay errors
+- **Activity log** — tracks auto-scheduler activity, M3U refreshes, and relay errors (including FFmpeg crash codes)
 - **Password protected** — login required, session-based auth
 - **LAN accessible** — binds to `0.0.0.0` so any device on your network can reach it
 
@@ -136,7 +139,7 @@ http://192.168.1.x:3000
 
 1. Type in the **Channel Search** box to filter your channel list
 2. Click or tap any channel to open the scheduling modal:
-   - **Now** — relays immediately to the next free slot
+   - **Now** — relays immediately; see slot selection behaviour below
    - **Once** — pick a date and time
    - **Recurring** — choose Daily / Weekly / Monthly, set a time, and (for weekly/monthly) pick a day
 3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto; hidden when Max Streams is set to 1)
@@ -169,9 +172,14 @@ The Auto-Scheduler queries a sports API on a daily schedule and automatically cr
 
 Matched events are scheduled 10 minutes before their listed start time. If the channel name includes an embedded event time, that is used instead of the API time.
 
+### Logging (Settings)
+
+- **FFmpeg Logging** — when enabled, each relay slot writes warnings and errors to `logs/ffmpeg-<slot>.log` inside the StreamSched folder. Configure the log directory and max file size (1–100 MB; file is truncated at relay start if the limit is exceeded). Defaults to off.
+- **Console Logging** — toggles server-side `console.log` output. Useful to enable when running `node server.js` directly for debugging; leave off when running as an NSSM service. `console.error` is always active regardless of this setting. Defaults to off.
+
 ### Recent Activity (Dashboard)
 
-- Shows the last 5 streams launched — click or tap any entry to replay it instantly
+- Shows the last 5 streams launched — click or tap any entry to replay it instantly using the same slot selection behaviour described below
 
 ---
 
@@ -179,13 +187,24 @@ Matched events are scheduled 10 minutes before their listed start time. If the c
 
 StreamSched supports up to 5 simultaneous FFmpeg relay slots. Configure how many are available in **Settings → Max Streams** (1–5, default 2).
 
-Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS. When a stream is launched:
+Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS.
 
-1. If a **Preferred Slot** is set and that slot is free, it is used
+### Slot selection when launching immediately
+
+Launching immediately (Recent Activity card, Schedule "Run Now", or "Now" in the schedule/channel modal) uses one of two paths depending on **Max Streams**:
+
+- **Max Streams = 1** — stream01 is always used; if it is already occupied the current stream is stopped and replaced automatically.
+- **Max Streams > 1** — a slot picker appears listing Auto and each individual slot with its current state (Free or the name of the stream playing). Clicking a row launches immediately. Choosing an occupied slot stops it first. Auto is disabled when all slots are full, but individual slots remain selectable for forced replacement.
+
+### Scheduled streams
+
+Scheduled streams use the optional **Preferred Slot** set on the schedule:
+
+1. If a preferred slot is set and free, it is used
 2. Otherwise the first available slot is auto-assigned
 3. If all slots are full, the launch is rejected and logged to the Activity Log
 
-FFmpeg processes are spawned detached from Node.js, so they are not killed when the service stops or restarts. If the server restarts, any still-running FFmpeg processes are automatically re-adopted by PID — streams are not interrupted.
+FFmpeg processes are spawned detached from Node.js, so they are not killed when the service stops or restarts. If the server restarts, any still-running FFmpeg processes are killed and immediately re-spawned — this causes a brief stream interruption but ensures full crash detection (exit codes, activity log) going forward.
 
 ---
 
@@ -214,7 +233,7 @@ All data is stored in the `data/` directory:
 | `schedules.json`      | All saved schedules (includes `preferredSlot`, `frequency`, `recurTime`, `recurDay`) |
 | `history.json`        | Playback log (last 10 entries)                    |
 | `relays.json`         | Active relay state — slot, name, pid (persisted across restarts) |
-| `settings.json`       | SRS URLs, max slots, M3U refresh settings         |
+| `settings.json`       | SRS URLs, max slots, M3U refresh settings, FFmpeg logging config, console logging toggle |
 | `auto_scheduler.json` | Auto-scheduler config, default slot, activity log |
 | `m3u_cache.json`      | Cached channel list from last M3U fetch           |
 

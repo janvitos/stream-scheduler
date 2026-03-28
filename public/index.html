@@ -31,9 +31,10 @@
       --muted2:   #8891a0;
       --danger:   #ff4c6a;
       --success:  #00e5a0;
-      --warn:     #ffb830;
-      --sidebar:  220px;
-      --radius:   10px;
+      --warn:         #ffb830;
+      --accent-dim:   rgba(0,229,160,.5);
+      --sidebar:      220px;
+      --radius:       10px;
     }
     html, body { height: 100%; }
     body {
@@ -223,10 +224,12 @@
       transition: border-color .2s, box-shadow .2s;
       width: 100%;
     }
+    input:not(:disabled):not(:focus):hover, select:not(:disabled):not(:focus):hover, textarea:not(:disabled):not(:focus):hover { border-color: var(--accent-dim); }
     input:disabled, select:disabled { opacity: .35; cursor: not-allowed; }
     input[type=time] { width: auto; padding: 0 12px; }
-    input[type=datetime-local]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(.45); cursor: pointer; }
-    select { appearance: none; -webkit-appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+    input[type=datetime-local]::-webkit-calendar-picker-indicator,
+    input[type=time]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(.38); cursor: pointer; }
+    select { appearance: none; -webkit-appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235a6070' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
     .input-group { position: relative; }
     .input-group input { width: 100%; padding-right: 36px; }
     .input-group .btn-copy { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; border: none; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
@@ -322,7 +325,7 @@
     /* ── M3U search ── */
     .channel-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
     .ch-card { cursor: pointer; transition: background .15s, border-color .15s; }
-    .ch-card:hover { background: rgba(37,44,54,0.5); border-color: var(--accent); }
+    .ch-card:hover { background: rgba(37,44,54,0.5); border-color: var(--accent-dim); }
     .item-logo { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
     .item-logo-placeholder { width: 32px; height: 32px; border-radius: 6px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
     .item-logo-placeholder.hidden { display: none; }
@@ -358,6 +361,20 @@
     .modal-overlay.show .modal { transform: none; }
     .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 22px; }
     .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+    /* ── Relay Picker ── */
+    .rp-slot-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer; margin-bottom: 8px; transition: border-color .15s;
+    }
+    .rp-slot-item:last-child { margin-bottom: 0; }
+    .rp-slot-item:hover:not(.rp-slot-item--disabled) { border-color: var(--accent-dim); }
+    .rp-slot-item--selected { border-color: var(--accent); }
+    .rp-slot-item--disabled { opacity: .4; cursor: default; }
+    .rp-slot-name  { font-weight: 500; font-size: .85rem; flex-shrink: 0; }
+    .rp-slot-state { font-size: .78rem; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+    .rp-slot-playing { color: var(--accent); }
 
     /* ── Toast ── */
     #toast-container {
@@ -708,6 +725,40 @@
         </div>
 
         <div class="card">
+          <div class="card-header">
+            <div class="card-title">📋 Logging</div>
+          </div>
+          <div class="flex gap-8 align-center">
+            <span class="setting-text">FFmpeg Logging</span>
+            <div id="ffmpeg-log-toggle" class="toggle-switch">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+          <div class="form-grid form-grid-2 mt-16">
+            <div class="field">
+              <label class="lbl">Log Directory</label>
+              <input type="text" id="ffmpeg-log-path" autocomplete="off"/>
+            </div>
+            <div class="field">
+              <label class="lbl">Max File Size</label>
+              <select id="ffmpeg-log-max-mb">
+                <option value="1">1 MB</option>
+                <option value="10">10 MB</option>
+                <option value="20">20 MB</option>
+                <option value="50">50 MB</option>
+                <option value="100">100 MB</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex gap-8 mt-16 align-center">
+            <span class="setting-text">Console Logging</span>
+            <div id="console-log-toggle" class="toggle-switch">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-header"><div class="card-title">🔒 Change Password</div></div>
           <div class="form-grid">
             <div class="field">
@@ -847,6 +898,16 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="add-modal-cancel" type="button">Cancel</button>
       <button class="btn btn-primary" id="add-modal-save" type="button">Add to Schedules</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="relay-picker-modal">
+  <div class="modal">
+    <div class="modal-title">Choose Relay Slot</div>
+    <div id="rp-slot-list"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="rp-cancel" type="button">Cancel</button>
     </div>
   </div>
 </div>
@@ -1017,11 +1078,18 @@ function makeSchedItem(s) {
 async function runNow(id) {
   const s = schedules.find(s => s.id === id);
   if (!s) return;
-  const r = await POST('/api/play-now', { name: s.name, url: s.url, logo: s.logo || null });
-  r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
-  if (r.ok && s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
-  await loadHistory();
-  renderDashboard();
+  const max = parseInt(document.getElementById('max-slots')?.value || '2');
+  if (max === 1) {
+    const r = await POST('/api/play-now', { name: s.name, url: s.url, logo: s.logo || null, preferredSlot: 'stream01', force: true });
+    r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+    if (r.ok && s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
+    await loadHistory();
+    renderDashboard();
+  } else {
+    showRelayPicker(s.url, s.name, s.logo || null, async () => {
+      if (s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
+    });
+  }
 }
 
 async function deleteSchedule(id) {
@@ -1193,8 +1261,13 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
   const body = buildSchedulePayload('sm', url);
   if (body.scheduleType === 'now') {
     hideModal('sched-modal');
-    const r = await POST('/api/play-now', { name: body.name, url, preferredSlot: body.preferredSlot });
-    r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
+    const max = parseInt(document.getElementById('max-slots')?.value || '2');
+    if (max === 1) {
+      const r = await POST('/api/play-now', { name: body.name, url, preferredSlot: 'stream01', force: true });
+      r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+    } else {
+      showRelayPicker(url, body.name, null, null);
+    }
     return;
   }
   if (editingId) {
@@ -1245,10 +1318,15 @@ function makeHistoryItem(h) {
     </div>`;
   if (h.url) {
     div.addEventListener('click', async () => {
-      div.style.pointerEvents = 'none';
-      const r = await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null });
-      r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
-      div.style.pointerEvents = '';
+      const max = parseInt(document.getElementById('max-slots')?.value || '2');
+      if (max === 1) {
+        div.style.pointerEvents = 'none';
+        const r = await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null, preferredSlot: 'stream01', force: true });
+        r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+        div.style.pointerEvents = '';
+      } else {
+        showRelayPicker(h.url, h.scheduleName, h.logo || null, null);
+      }
     });
   }
   return div;
@@ -1301,7 +1379,9 @@ function resetProgress() {
 }
 
 let m3uCachedSourceUrl = '';
-let m3uRefreshEnabled = false;
+let m3uRefreshEnabled  = false;
+let ffmpegLogEnabled   = false;
+let consoleLogEnabled  = false;
 
 function updateGetBtn() {
   const btn = document.getElementById('m3u-get-btn');
@@ -1319,6 +1399,20 @@ function updateM3URefreshToggle() {
   setToggleState('m3u-refresh-toggle', m3uRefreshEnabled);
   document.getElementById('m3u-refresh-time').disabled = !m3uRefreshEnabled;
 }
+
+function updateFFmpegLogToggle() {
+  setToggleState('ffmpeg-log-toggle', ffmpegLogEnabled);
+  ['ffmpeg-log-path', 'ffmpeg-log-max-mb'].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled    = !ffmpegLogEnabled;
+    el.style.opacity = ffmpegLogEnabled ? '' : '0.4';
+  });
+}
+
+function updateConsoleLogToggle() {
+  setToggleState('console-log-toggle', consoleLogEnabled);
+}
+
 
 // Auto-load cache on page open
 async function loadCacheInfo() {
@@ -1348,6 +1442,12 @@ async function loadCacheInfo() {
     document.getElementById('srs-watch-url').value = settingsRes.srsWatchUrl || '';
     document.getElementById('max-slots').value      = String(settingsRes.maxSlots ?? 2);
     updateSlotVisibility();
+    ffmpegLogEnabled  = !!settingsRes.ffmpegLogEnabled;
+    consoleLogEnabled = !!settingsRes.consoleLogEnabled;
+    document.getElementById('ffmpeg-log-path').value   = settingsRes.ffmpegLogPath      || '';
+    document.getElementById('ffmpeg-log-max-mb').value = settingsRes.ffmpegLogMaxSizeMb ?? 10;
+    updateFFmpegLogToggle();
+    updateConsoleLogToggle();
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -1471,6 +1571,26 @@ document.getElementById('max-slots').addEventListener('change', async () => {
   updateSlotVisibility();
   toast('Max streams saved');
 });
+document.getElementById('ffmpeg-log-toggle').addEventListener('click', async () => {
+  ffmpegLogEnabled = !ffmpegLogEnabled;
+  updateFFmpegLogToggle();
+  await PUT('/api/settings', { ffmpegLogEnabled });
+  toast(ffmpegLogEnabled ? 'FFmpeg logging enabled' : 'FFmpeg logging disabled');
+});
+document.getElementById('ffmpeg-log-path').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { ffmpegLogPath: document.getElementById('ffmpeg-log-path').value.trim() });
+  toast('Log path saved');
+}, 1500));
+document.getElementById('ffmpeg-log-max-mb').addEventListener('change', async () => {
+  await PUT('/api/settings', { ffmpegLogMaxSizeMb: parseInt(document.getElementById('ffmpeg-log-max-mb').value) || 10 });
+  toast('Max log size saved');
+});
+document.getElementById('console-log-toggle').addEventListener('click', async () => {
+  consoleLogEnabled = !consoleLogEnabled;
+  updateConsoleLogToggle();
+  await PUT('/api/settings', { consoleLogEnabled });
+  toast(consoleLogEnabled ? 'Console logging enabled' : 'Console logging disabled');
+});
 
 // Search
 // Live search
@@ -1593,8 +1713,13 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   if (body.scheduleType === 'now') {
     const logo = document.getElementById('am-logo').value || null;
     hideModal('add-modal');
-    const r = await POST('/api/play-now', { name: body.name, url, logo, preferredSlot: body.preferredSlot });
-    r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
+    const max = parseInt(document.getElementById('max-slots')?.value || '2');
+    if (max === 1) {
+      const r = await POST('/api/play-now', { name: body.name, url, logo, preferredSlot: 'stream01', force: true });
+      r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+    } else {
+      showRelayPicker(url, body.name, logo, null);
+    }
     return;
   }
   await POST('/api/schedules', body);
@@ -1602,6 +1727,22 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   hideModal('add-modal');
   loadSchedules();
 });
+
+// ── Relay Picker ──────────────────────────────────────────────────────────────
+document.getElementById('rp-cancel').addEventListener('click', () => hideModal('relay-picker-modal'));
+async function executeRelay(slot) {
+  hideModal('relay-picker-modal');
+  const { url, name, logo, onSuccess } = rpPendingPayload;
+  const occupied = slot && relayData.find(r => r.slot === slot);
+  const payload  = { url, name, logo };
+  if (slot)     payload.preferredSlot = slot;
+  if (occupied) payload.force         = true;
+  const r = await POST('/api/play-now', payload);
+  r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
+  if (r.ok && onSuccess) await onSuccess(r);
+  await loadHistory();
+  renderDashboard();
+}
 
 /* ═══════════════════════════════════════════
    Settings
@@ -1653,8 +1794,39 @@ document.addEventListener('keydown', e => {
 ═══════════════════════════════════════════ */
 
 // ── Active Relays ─────────────────────────────────────────────────────────────
-let relayData = [];
+let relayData        = [];
+let rpPendingPayload = null; // { url, name, logo, onSuccess }
 const hlsInstances = new Map();
+
+function showRelayPicker(url, name, logo, onSuccess) {
+  rpPendingPayload = { url, name, logo, onSuccess };
+  const max     = parseInt(document.getElementById('max-slots')?.value || '2');
+  const allFull = relayData.length >= max;
+  const list    = document.getElementById('rp-slot-list');
+  list.innerHTML = '';
+
+  function makeItem(slot, label, stateText, disabled, playing) {
+    const div = document.createElement('div');
+    div.className = 'rp-slot-item' + (disabled ? ' rp-slot-item--disabled' : '');
+    div.dataset.slot = slot;
+    div.innerHTML = `<span class="rp-slot-name">${label}</span>`
+                  + `<span class="rp-slot-state${playing ? ' rp-slot-playing' : ''}">${esc(stateText)}</span>`;
+    if (!disabled) div.addEventListener('click', () => executeRelay(slot));
+    return div;
+  }
+
+  // Auto option — disabled when all slots are full
+  list.appendChild(makeItem('', 'Auto', allFull ? 'All slots occupied' : 'First available slot', allFull, false));
+
+  // Per-slot options
+  for (let i = 0; i < max; i++) {
+    const slot   = `stream0${i + 1}`;
+    const active = relayData.find(r => r.slot === slot);
+    list.appendChild(makeItem(slot, slot, active ? active.name : 'Free', false, !!active));
+  }
+
+  showModal('relay-picker-modal');
+}
 
 function makeRelayCard(relay) {
   const wrap = document.createElement('div');
