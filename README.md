@@ -16,12 +16,14 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 - **Relay slot picker** — when launching immediately with multiple slots available, a picker modal shows the state of each slot; with a single slot configured, the current stream is replaced automatically
 - **In-browser HLS preview** — watch any active relay directly in the dashboard via hls.js
 - **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string; supports a default relay slot
+- **FFmpeg auto-restart** — if FFmpeg exits unexpectedly (any exit not triggered by the Stop button), the relay automatically re-spawns after a 3-second delay
 - **Stream survival** — FFmpeg relay processes are detached from Node.js and survive both a Node.js crash and a full NSSM service restart; live processes are re-spawned on boot for full crash detection
+- **Cross-platform FFmpeg** — uses `bin/ffmpeg` if present, otherwise falls back to `ffmpeg` on the system PATH; Windows uses `ffmpeg.exe` automatically
 - **FFmpeg logging** — optional per-slot log files capturing warnings and errors; configurable directory and max file size
 - **Console logging** — toggle server-side console output on or off (useful when running as a background service)
 - **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
 - **Playback history** — log of every stream launched with timestamps and status
-- **Activity log** — tracks auto-scheduler activity, M3U refreshes, and relay errors (including FFmpeg crash codes)
+- **Activity log** — dedicated page tracking auto-scheduler activity, M3U refreshes, relay errors, and auto-restart events (last 100 entries)
 - **Password protected** — login required, session-based auth
 - **LAN accessible** — binds to `0.0.0.0` so any device on your network can reach it
 
@@ -30,7 +32,7 @@ StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) v18 or later
-- [FFmpeg](https://ffmpeg.org/) — place `ffmpeg.exe` in the `bin/` folder
+- [FFmpeg](https://ffmpeg.org/) — place in `bin/` or install system-wide
 - [SRS (Simple Realtime Server)](https://ossrs.net/) — receives RTMP from FFmpeg and serves HLS
 
 ---
@@ -47,12 +49,26 @@ npm install
 
 ### 2. Place FFmpeg
 
-Download a Windows FFmpeg build and place `ffmpeg.exe` in the `bin/` folder:
+StreamSched looks for FFmpeg in the following order:
 
+1. `bin/ffmpeg.exe` (Windows) or `bin/ffmpeg` (Linux/Mac) — local binary inside the app folder
+2. `ffmpeg` on the system PATH — if no local binary is found
+
+**Option A — Local binary (all platforms):**
 ```
 StreamSched/
   bin/
-    ffmpeg.exe
+    ffmpeg.exe   ← Windows
+    ffmpeg       ← Linux / Mac
+```
+
+**Option B — System-wide (Linux/Mac):**
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
 ```
 
 ### 3. Run setup (first time only)
@@ -143,12 +159,14 @@ http://192.168.1.x:3000
    - **Once** — pick a date and time
    - **Recurring** — choose Daily / Weekly / Monthly, set a time, and (for weekly/monthly) pick a day
 3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto; hidden when Max Streams is set to 1)
+4. After clicking **Add to Schedules**, the search input and results are cleared automatically
 
 ### Active Relays (Dashboard)
 
 - Each active relay appears as a card showing channel logo, stream name, start time, and slot (slot hidden when Max Streams is 1)
 - **👁 Preview** — shows a live HLS video preview directly in the dashboard
 - **■ Stop** — terminates the FFmpeg relay for that slot
+- If FFmpeg exits unexpectedly, the relay auto-restarts after 3 seconds and is logged to the Activity Log
 
 ### Managing Schedules (Dashboard)
 
@@ -158,6 +176,11 @@ http://192.168.1.x:3000
 - Recurring schedules show a frequency badge (`DAILY` / `WEEKLY` / `MONTHLY`) and a compact time tag (e.g. `8:00 PM`, `Mon · 8:00 PM`, `1st · 8:00 PM`)
 - One-time schedules remove themselves after firing
 - Schedules are listed newest-first; slot badge shown when Max Streams > 1 (displays "Auto" if no preferred slot is set)
+
+### Activity Log (dedicated page)
+
+- Shows the last 100 auto-scheduler events, M3U refresh events, relay errors, and auto-restart events
+- Updates in real time via SSE
 
 ### Auto-Scheduler (Settings)
 
@@ -170,7 +193,7 @@ The Auto-Scheduler queries a sports API on a daily schedule and automatically cr
 5. Optionally enable **Refresh M3U before running** to ensure channels are up to date
 6. Toggle **Auto-Scheduler** on to activate
 
-Matched events are scheduled 10 minutes before their listed start time. If the channel name includes an embedded event time, that is used instead of the API time.
+Matched events are scheduled 10 minutes before their ESPN-listed start time. Game times are sourced exclusively from the ESPN API (UTC, converted to Eastern Time via `America/New_York`) to ensure correct DST handling year-round.
 
 ### Logging (Settings)
 
@@ -179,7 +202,7 @@ Matched events are scheduled 10 minutes before their listed start time. If the c
 
 ### Recent Activity (Dashboard)
 
-- Shows the last 5 streams launched — click or tap any entry to replay it instantly using the same slot selection behaviour described below
+- Shows the last 10 streams launched in a 2-column grid — click or tap any entry to replay it instantly using the same slot selection behaviour described below
 
 ---
 
@@ -204,7 +227,7 @@ Scheduled streams use the optional **Preferred Slot** set on the schedule:
 2. Otherwise the first available slot is auto-assigned
 3. If all slots are full, the launch is rejected and logged to the Activity Log
 
-FFmpeg processes are spawned detached from Node.js, so they are not killed when the service stops or restarts. If the server restarts, any still-running FFmpeg processes are killed and immediately re-spawned — this causes a brief stream interruption but ensures full crash detection (exit codes, activity log) going forward.
+FFmpeg processes are spawned detached from Node.js, so they are not killed when the service stops or restarts. If the server restarts, any still-running FFmpeg processes are killed and immediately re-spawned — this causes a brief stream interruption but ensures full crash detection (exit codes, activity log) going forward. If FFmpeg exits unexpectedly at any time, it is automatically re-spawned after a 3-second delay.
 
 ---
 
@@ -234,7 +257,7 @@ All data is stored in the `data/` directory:
 | `history.json`        | Playback log (last 10 entries)                    |
 | `relays.json`         | Active relay state — slot, name, pid (persisted across restarts) |
 | `settings.json`       | SRS URLs, max slots, M3U refresh settings, FFmpeg logging config, console logging toggle |
-| `auto_scheduler.json` | Auto-scheduler config, default slot, activity log |
+| `auto_scheduler.json` | Auto-scheduler config, default slot, activity log (last 100 entries) |
 | `m3u_cache.json`      | Cached channel list from last M3U fetch           |
 
 ---

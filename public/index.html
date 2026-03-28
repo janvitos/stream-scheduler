@@ -123,6 +123,7 @@
     .sb-footer {
       padding: 14px;
       border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 8px;
     }
     .sb-footer button {
       width: 100%; height: 38px; padding: 0 8px; box-sizing: border-box;
@@ -577,7 +578,6 @@
   </div>
   <div class="sb-footer">
     <button id="restartBtn" type="button">Restart Service</button>
-    <div style="height:8px"></div>
     <button id="logoutBtn" type="button">Sign Out</button>
   </div>
 </nav>
@@ -1644,6 +1644,13 @@ document.getElementById('m3u-search').addEventListener('input', () => {
   doSearch();
 });
 
+function clearChannelSearch() {
+  document.getElementById('m3u-search').value = '';
+  document.getElementById('m3u-results-wrap').style.display = 'none';
+  document.getElementById('m3u-search-help').textContent = '';
+  document.getElementById('channel-list').innerHTML = '';
+}
+
 function renderChannels(channels, count, total) {
   const card = document.getElementById('m3u-results-wrap');
   const list = document.getElementById('channel-list');
@@ -1730,6 +1737,7 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   if (body.scheduleType === 'now') {
     const logo = document.getElementById('am-logo').value || null;
     hideModal('add-modal');
+    clearChannelSearch();
     const max = parseInt(document.getElementById('max-slots')?.value || '2');
     if (max === 1) {
       const r = await POST('/api/play-now', { name: body.name, url, logo, preferredSlot: 'stream01', force: true });
@@ -1742,6 +1750,7 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   await POST('/api/schedules', body);
   toast('Added to schedules!');
   hideModal('add-modal');
+  clearChannelSearch();
   loadSchedules();
 });
 

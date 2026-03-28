@@ -19,7 +19,9 @@ const HISTORY_PATH    = path.join(DATA_DIR, 'history.json');
 const SETTINGS_PATH   = path.join(DATA_DIR, 'settings.json');
 const AUTO_SCHED_PATH = path.join(DATA_DIR, 'auto_scheduler.json');
 const RELAYS_PATH     = path.join(DATA_DIR, 'relays.json');
-const FFMPEG_PATH     = path.join(__dirname, 'bin', 'ffmpeg.exe');
+const ffmpegBin       = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+const ffmpegLocal     = path.join(__dirname, 'bin', ffmpegBin);
+const FFMPEG_PATH     = fs.existsSync(ffmpegLocal) ? ffmpegLocal : ffmpegBin;
 const ALL_SLOTS       = ['stream01', 'stream02', 'stream03', 'stream04', 'stream05'];
 
 if (!fs.existsSync(CONFIG_PATH)) {
@@ -487,12 +489,13 @@ function spawnRelay(slot, s) {
     ...(settings.ffmpegLogEnabled ? ['-loglevel', 'warning'] : []),
     '-re',
     '-fflags', '+genpts+discardcorrupt',
-    '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+    '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+    '-rw_timeout', '5000000',
     '-i', s.url,
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-crf', '23',
     '-g', '60',
     '-c:a', 'aac', '-b:a', '128k',
-    '-f', 'flv',
+    '-f', 'flv', '-flvflags', 'no_duration_filesize',
     outputUrl
   ];
 
@@ -526,6 +529,8 @@ function spawnRelay(slot, s) {
 
   proc.on('exit', (code) => {
     serverLog(`[Relay:${slot}] FFmpeg exited, code: ${code}`);
+    const unexpected = relays.has(slot);
+    const saved = unexpected ? { ...relays.get(slot), proc: undefined } : null;
     if (code === null) {
       logAutoActivity('warn',  `Relay ${slot} was stopped`);
     } else if (code === 0) {
@@ -536,6 +541,19 @@ function spawnRelay(slot, s) {
     if (relays.has(slot)) {
       relays.delete(slot);
       saveRelays();
+    }
+    if (unexpected && saved && code !== null) {
+      logAutoActivity('info', `Auto-restarting relay ${slot} in 3s…`);
+      setTimeout(() => {
+        const newProc = spawnRelay(slot, saved);
+        if (newProc) {
+          relays.set(slot, { slot, name: saved.name, url: saved.url, logo: saved.logo, startedAt: new Date().toISOString(), pid: newProc.pid, proc: newProc });
+          saveRelays();
+          logAutoActivity('info', `Relay ${slot} auto-restarted`);
+        } else {
+          logAutoActivity('error', `Relay ${slot} failed to auto-restart`);
+        }
+      }, 3000);
     }
   });
 
