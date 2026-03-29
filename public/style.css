@@ -318,7 +318,7 @@ textarea { resize: vertical; min-height: 70px; }
 /* ── Schedule list ── */
 .sched-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
 .sched-btn {
-  width: 38px; height: 38px;
+  width: 36px; height: 36px;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 6px; border: 1px solid rgba(0,229,160,.25);
   background: rgba(0,229,160,.12); color: var(--accent);
@@ -339,8 +339,8 @@ textarea { resize: vertical; min-height: 70px; }
 }
 .ch-card { cursor: pointer; transition: background .15s, border-color .15s; }
 .ch-card:hover { background: rgba(37,44,54,0.5); border-color: var(--accent-dim); }
-.item-logo { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
-.item-logo-placeholder { width: 32px; height: 32px; border-radius: 6px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+.item-logo { width: 36px; height: 36px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
+.item-logo-placeholder { width: 36px; height: 36px; border-radius: 6px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
 .item-logo-placeholder.hidden { display: none; }
 
 
@@ -517,9 +517,6 @@ textarea { resize: vertical; min-height: 70px; }
 
   /* Cards less padding */
   .card { padding: 14px; }
-
-  /* All cards: smaller logo */
-  .item-logo, .item-logo-placeholder { width: 28px; height: 28px; min-width: 28px; min-height: 28px; }
 
   /* Buttons: bigger tap targets */
   .btn { padding: 0 16px; }
