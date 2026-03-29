@@ -310,7 +310,7 @@
     .item-list--grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .item-list--grid > * { min-width: 0; }
     @media (max-width: 900px) {
-      .channel-list, .item-list--grid { grid-template-columns: 1fr; }
+      .item-list--grid { grid-template-columns: 1fr; }
     }
     .media-row  {
       background: var(--surface2);
@@ -350,6 +350,9 @@
     /* ── M3U search ── */
     .channel-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 400px; overflow-y: auto; }
     .channel-list > * { min-width: 0; }
+    @media (max-width: 900px) {
+      .channel-list { grid-template-columns: 1fr; }
+    }
     .ch-card { cursor: pointer; transition: background .15s, border-color .15s; }
     .ch-card:hover { background: rgba(37,44,54,0.5); border-color: var(--accent-dim); }
     .item-logo { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 6px; object-fit: contain; background: var(--border); flex-shrink: 0; }
