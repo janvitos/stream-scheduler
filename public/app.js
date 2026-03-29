@@ -1,0 +1,1173 @@
+/* ═══════════════════════════════════════════
+   State
+═══════════════════════════════════════════ */
+let schedules = [];
+let history   = [];
+
+/* ═══════════════════════════════════════════
+   Navigation
+═══════════════════════════════════════════ */
+const pages = { dashboard:'Dashboard', 'activity-log':'Activity Log', settings:'Settings' };
+document.querySelectorAll('.sb-item[data-page]').forEach(el => {
+  el.addEventListener('click', () => { navTo(el.dataset.page); closeSidebar(); });
+});
+function navTo(page) {
+  if (!pages[page]) page = 'dashboard'; // guard against unknown pages
+  // Leaving dashboard — tear down any active HLS previews
+  if (page !== 'dashboard' && hlsInstances.size > 0) {
+    const list = document.getElementById('relay-list');
+    for (const [slot, hls] of hlsInstances) {
+      hls.destroy();
+      if (list) {
+        const wrap = list.querySelector(`[data-preview-wrap="${slot}"]`);
+        const btn  = list.querySelector(`[data-preview="${slot}"]`);
+        const video = wrap?.querySelector('video');
+        if (wrap)  wrap.style.display = 'none';
+        if (btn)   btn.classList.remove('sched-btn-active');
+        if (video) { video.pause(); video.src = ''; }
+      }
+    }
+    hlsInstances.clear();
+  }
+  document.querySelectorAll('.sb-item').forEach(e => e.classList.toggle('active', e.dataset.page === page));
+  document.querySelectorAll('.page').forEach(e => e.classList.toggle('active', e.id === 'page-'+page));
+  document.getElementById('page-title').textContent = pages[page] || page;
+  window.history.pushState(null, '', page === 'dashboard' ? '/' : '/' + page);
+  if (page === 'dashboard') {
+    Promise.all([loadSchedules(), loadHistory()]);
+  }
+  connectDashboardSSE(); // always connected regardless of current page
+  if (page === 'settings') {
+    const pg = document.getElementById('page-settings');
+    pg.style.visibility = 'hidden';
+    loadAutoScheduler().then(() => { pg.style.visibility = 'visible'; });
+  }
+  if (page === 'activity-log') {
+    renderAsLog();
+  }
+}
+
+// Sidebar drawer (mobile)
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+document.getElementById('hamburger-btn').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
+});
+document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
+
+/* ═══════════════════════════════════════════
+   API helpers
+═══════════════════════════════════════════ */
+const api = async (method, path, body) => {
+  const r = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (r.status === 401) { location.href = '/login'; throw new Error('Unauthorized'); }
+  return r.json();
+};
+const GET    = p     => api('GET',    p);
+const POST   = (p,b) => api('POST',   p, b);
+const PUT    = (p,b) => api('PUT',    p, b);
+const DELETE = p     => api('DELETE', p);
+
+/* ═══════════════════════════════════════════
+   Toast
+═══════════════════════════════════════════ */
+function toast(msg, type='ok') {
+  const colors = { ok: 'var(--accent)', error: 'var(--danger)', warn: 'var(--warn)' };
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<div class="toast-dot" style="background:${colors[type]||colors.ok}"></div>${msg}`;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+function copyUrlBtn(inputId, btnId) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const val = document.getElementById(inputId)?.value?.trim();
+    if (!val) return;
+    navigator.clipboard.writeText(val).then(() => {
+      btn.innerHTML = '✓'; btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="11" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-7A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5"/></svg>'; btn.classList.remove('copied'); }, 1500);
+    }).catch(() => toast('Copy failed', 'error'));
+  });
+}
+copyUrlBtn('sm-url', 'sm-url-copy');
+copyUrlBtn('am-url', 'am-url-copy');
+
+/* ═══════════════════════════════════════════
+   Schedules
+═══════════════════════════════════════════ */
+async function loadSchedules() {
+  schedules = await GET('/api/schedules');
+  renderSchedules();
+  renderDashboard();
+  if (document.getElementById('page-settings').classList.contains('active')) {
+    GET('/api/auto-scheduler').then(data => { asData = data; renderAsLog(); });
+  }
+}
+
+function renderSchedules() {
+  const wrap = document.getElementById('sched-list-wrap');
+  if (!schedules.length) {
+    wrap.innerHTML = '<div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>No schedules</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>';
+    return;
+  }
+  wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
+  const list = document.getElementById('sched-list');
+  [...schedules].reverse().forEach(s => list.appendChild(makeSchedItem(s)));
+}
+
+function makeSchedItem(s) {
+  const div = document.createElement('div');
+  div.className = 'media-row';
+  const { channel: sChannel, title: sTitle } = parseName(s.name);
+  div.innerHTML = `
+    ${logoImg(s.logo)}
+    <div class="item-info">
+      <div class="item-name">${esc(sTitle || s.name)}</div>
+      <div class="item-meta">
+        ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-time">${fmtDt(s.runAt)}</span>`:''}
+        ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(describeRecurrence(s))}</span>`:''}
+        ${channelTag(sChannel)}
+        <span class="item-tag tag-sched-type">${s.scheduleType==='cron'?(s.frequency||'recurring').toUpperCase():'ONE-TIME'}</span>
+        ${s.lastRun?`<span class="item-tag tag-time">Last: ${fmtDt(s.lastRun)}</span>`:''}
+        ${parseInt(document.getElementById('max-slots')?.value||'2')>1?`<span class="item-tag tag-slot">${esc(s.preferredSlot || 'Auto')}</span>`:''}
+      </div>
+    </div>
+    <div class="sched-actions">
+      <button class="sched-btn sched-btn-run"    title="Run now"  data-action="run"    data-id="${s.id}">▶</button>
+      <button class="sched-btn sched-btn-edit"   title="Edit"     data-action="edit"   data-id="${s.id}">✎</button>
+      <button class="sched-btn sched-btn-delete" title="Delete"   data-action="delete" data-id="${s.id}">✖</button>
+    </div>`;
+  div.querySelectorAll('[data-action]').forEach(el => {
+    const action = el.dataset.action;
+    const id     = el.dataset.id;
+    if (action === 'run')    el.addEventListener('click', () => runNow(id));
+    if (action === 'delete') el.addEventListener('click', () => deleteSchedule(id));
+    if (action === 'edit')   el.addEventListener('click', () => openEditModal(id));
+  });
+  return div;
+}
+
+async function runNow(id) {
+  const s = schedules.find(s => s.id === id);
+  if (!s) return;
+  const max = parseInt(document.getElementById('max-slots')?.value || '2');
+  if (max === 1) {
+    const r = await POST('/api/play-now', { name: s.name, url: s.url, logo: s.logo || null, preferredSlot: 'stream01', force: true });
+    r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+    if (r.ok && s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
+    await loadHistory();
+    renderDashboard();
+  } else {
+    showRelayPicker(s.url, s.name, s.logo || null, async () => {
+      if (s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
+    });
+  }
+}
+
+async function deleteSchedule(id) {
+  await DELETE(`/api/schedules/${id}`);
+  toast('Schedule deleted', 'warn');
+  loadSchedules();
+}
+
+/* ═══════════════════════════════════════════
+   Schedule Modal
+═══════════════════════════════════════════ */
+let editingId = null;
+
+function openNewModal() {
+  editingId = null;
+  document.getElementById('sched-modal-title').textContent = 'New Schedule';
+  document.getElementById('sm-name').value      = '';
+  document.getElementById('sm-url').value       = '';
+  document.getElementById('sm-type').value      = 'now';
+  document.getElementById('sm-runat').value     = localDateTimeValue();
+  document.getElementById('sm-frequency').value = 'daily';
+  document.getElementById('sm-recur-time').value = '20:00';
+  populateRecurDaySelect('sm', 'daily');
+  populateSlotDropdown('sm-slot');
+  toggleTypeFields('sm', 'now');
+  showModal('sched-modal');
+}
+
+function openEditModal(id) {
+  const s = schedules.find(x => x.id === id);
+  if (!s) return;
+  editingId = id;
+  document.getElementById('sched-modal-title').textContent = 'Edit Schedule';
+  document.getElementById('sm-name').value   = s.name;
+  document.getElementById('sm-url').value    = s.url;
+  document.getElementById('sm-type').value   = s.scheduleType;
+  document.getElementById('sm-runat').value  = s.runAt ? s.runAt.slice(0,16) : '';
+  if (s.scheduleType === 'cron') {
+    document.getElementById('sm-frequency').value  = s.frequency || 'daily';
+    document.getElementById('sm-recur-time').value = s.recurTime || '20:00';
+    populateRecurDaySelect('sm', s.frequency || 'daily', s.recurDay);
+  }
+  toggleTypeFields('sm', s.scheduleType);
+  populateSlotDropdown('sm-slot', s.preferredSlot);
+  showModal('sched-modal');
+}
+
+function toggleTypeFields(prefix, v) {
+  const onceWrap = document.getElementById(prefix + '-once-wrap');
+  const cronWrap = document.getElementById(prefix + '-cron-wrap');
+  const runat    = document.getElementById(prefix + '-runat');
+  if (v === 'cron') {
+    onceWrap.style.display = 'none';
+    cronWrap.style.display = '';
+  } else {
+    onceWrap.style.display = '';
+    cronWrap.style.display = 'none';
+    runat.disabled = v !== 'once';
+  }
+}
+document.getElementById('sm-type').addEventListener('change', e => toggleTypeFields('sm', e.target.value));
+document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
+
+function ordinal(n) {
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function populateRecurDaySelect(prefix, frequency, selected) {
+  const onLabel = document.getElementById(prefix + '-on-label');
+  const sel     = document.getElementById(prefix + '-recur-day');
+  if (frequency === 'daily') { onLabel.style.display = 'none'; sel.style.display = 'none'; return; }
+  onLabel.style.display = '';
+  sel.style.display = '';
+  sel.innerHTML = '';
+  if (frequency === 'weekly') {
+    ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = d;
+      if (i === selected) o.selected = true;
+      sel.appendChild(o);
+    });
+  } else {
+    for (let i = 1; i <= 31; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = ordinal(i);
+      if (i === selected) o.selected = true;
+      sel.appendChild(o);
+    }
+  }
+}
+
+function describeRecurrence(s) {
+  if (!s.frequency) return s.cronExpr || 'Recurring';
+  const [h, m] = (s.recurTime || '00:00').split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  const timeStr = `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  const shortDays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  if (s.frequency === 'daily')   return timeStr;
+  if (s.frequency === 'weekly')  return `${shortDays[s.recurDay] || ''} · ${timeStr}`;
+  if (s.frequency === 'monthly') return `${ordinal(s.recurDay || 1)} · ${timeStr}`;
+  return s.cronExpr || 'Recurring';
+}
+
+document.getElementById('sm-frequency').addEventListener('change', e => populateRecurDaySelect('sm', e.target.value));
+document.getElementById('am-frequency').addEventListener('change', e => populateRecurDaySelect('am', e.target.value));
+
+document.getElementById('sched-modal-cancel').addEventListener('click', () => { editingId = null; hideModal('sched-modal'); });
+// #5 — shared schedule payload builder
+function populateSlotDropdown(id, selectedSlot) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const max = parseInt(document.getElementById('max-slots')?.value || '5');
+  sel.innerHTML = '<option value="">Auto</option>';
+  for (let i = 0; i < Math.max(1, Math.min(5, max)); i++) {
+    const slot = `stream0${i + 1}`;
+    const opt  = document.createElement('option');
+    opt.value  = slot;
+    opt.textContent = slot;
+    if (slot === selectedSlot) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function updateSlotVisibility() {
+  const max  = parseInt(document.getElementById('max-slots')?.value || '2');
+  const show = max > 1;
+
+  // Modal slot pickers — hide entirely when only one slot
+  ['sm-slot', 'am-slot'].forEach(id => {
+    const sel   = document.getElementById(id);
+    const field = sel?.closest('.field');
+    if (field) field.style.display = show ? '' : 'none';
+    if (!show && sel) sel.value = 'stream01';
+  });
+
+  // Auto-scheduler Default Relay Slot — always visible; repopulate with correct
+  // count (fixes race with loadAutoScheduler), then disable + grey when max = 1
+  const asSlot = document.getElementById('as-slot');
+  if (asSlot) {
+    populateSlotDropdown('as-slot', show ? asSlot.value : 'stream01');
+    asSlot.disabled      = !show;
+    asSlot.style.opacity = show ? '' : '0.45';
+  }
+}
+
+function buildSchedulePayload(prefix, url) {
+  const scheduleType = document.getElementById(`${prefix}-type`).value;
+  const payload = {
+    name:          document.getElementById(`${prefix}-name`).value || 'Untitled',
+    url,
+    scheduleType,
+    runAt:         scheduleType === 'once' ? (document.getElementById(`${prefix}-runat`).value || null) : null,
+    preferredSlot: document.getElementById(`${prefix}-slot`)?.value || null,
+  };
+  if (scheduleType === 'cron') {
+    payload.frequency = document.getElementById(`${prefix}-frequency`).value;
+    payload.recurTime = document.getElementById(`${prefix}-recur-time`).value || '00:00';
+    const dayEl = document.getElementById(`${prefix}-recur-day`);
+    payload.recurDay = dayEl.style.display !== 'none' ? parseInt(dayEl.value) : null;
+  }
+  return payload;
+}
+
+document.getElementById('sched-modal-save').addEventListener('click', async () => {
+  const url  = document.getElementById('sm-url').value.trim();
+  if (!url) { toast('Stream URL is required', 'error'); return; }
+  const body = buildSchedulePayload('sm', url);
+  if (body.scheduleType === 'now') {
+    hideModal('sched-modal');
+    const max = parseInt(document.getElementById('max-slots')?.value || '2');
+    if (max === 1) {
+      const r = await POST('/api/play-now', { name: body.name, url, preferredSlot: 'stream01', force: true });
+      r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+    } else {
+      showRelayPicker(url, body.name, null, null);
+    }
+    return;
+  }
+  if (editingId) {
+    await PUT(`/api/schedules/${editingId}`, body);
+    toast('Schedule updated');
+  } else {
+    await POST('/api/schedules', body);
+    toast('Schedule created');
+  }
+  hideModal('sched-modal');
+  loadSchedules();
+});
+
+/* ═══════════════════════════════════════════
+   Dashboard
+═══════════════════════════════════════════ */
+async function renderDashboard() {
+  // Recent activity — show last 10 entries in a 2-column grid
+  const rh = document.getElementById('recent-history');
+  const recent = history.slice(0, 10);
+  if (!recent.length) { rh.innerHTML = '<div class="empty"><div class="empty-icon">☰</div><p>No recent activity.</p></div>'; return; }
+  rh.innerHTML = '<div class="item-list item-list--grid"></div>';
+  const hl = rh.querySelector('.item-list');
+  recent.forEach(h => hl.appendChild(makeHistoryItem(h)));
+}
+
+/* ═══════════════════════════════════════════
+   History
+═══════════════════════════════════════════ */
+async function loadHistory() {
+  history = await GET('/api/history');
+  renderDashboard();
+}
+
+function makeHistoryItem(h) {
+  const div = document.createElement('div');
+  div.className = h.url ? 'media-row ch-card' : 'media-row';
+  const { channel: hChannel, title: hTitle } = parseName(h.scheduleName);
+  div.innerHTML = `
+    ${logoImg(h.logo)}
+    <div class="item-info">
+      <div class="item-name">${esc(hTitle || h.scheduleName || 'Unknown')}</div>
+      <div class="item-meta">
+        <span class="item-tag tag-time">${fmtDt(h.startedAt)}</span>
+        ${channelTag(hChannel)}
+      </div>
+    </div>`;
+  if (h.url) {
+    div.addEventListener('click', async () => {
+      const max = parseInt(document.getElementById('max-slots')?.value || '2');
+      if (max === 1) {
+        div.style.pointerEvents = 'none';
+        const r = await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null, preferredSlot: 'stream01', force: true });
+        r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+        div.style.pointerEvents = '';
+      } else {
+        showRelayPicker(h.url, h.scheduleName, h.logo || null, null);
+      }
+    });
+  }
+  return div;
+}
+
+
+/* ═══════════════════════════════════════════
+   M3U
+═══════════════════════════════════════════ */
+let m3uReady = false;
+
+function fmtBytes(b) {
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+
+function fmtAge(fetchedAt) {
+  const mins = Math.round((Date.now() - fetchedAt) / 60000);
+  if (mins < 1)   return 'just now';
+  if (mins < 60)  return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs  < 24)  return hrs + 'h ago';
+  return Math.round(hrs / 24) + 'd ago';
+}
+
+function setSearchEnabled(on) {
+  const searchInp = document.getElementById('m3u-search');
+  searchInp.disabled = !on;
+  if (on) document.getElementById('m3u-search-help').textContent = '';
+}
+
+// #2 — merged M3U message display
+function showM3UMessage(type, msg) {
+  const isErr = type === 'error';
+  document.getElementById('m3u-error').style.display   = isErr ? 'block' : '';
+  document.getElementById('m3u-success').style.display = isErr ? '' : 'block';
+  const el = document.getElementById(isErr ? 'm3u-error' : 'm3u-success');
+  el.textContent = (isErr ? '✗ ' : '✓ ') + msg;
+}
+
+function resetProgress() {
+  document.getElementById('m3u-progress-wrap').style.display = 'none';
+  document.getElementById('m3u-progress-bar').style.width    = '0%';
+  document.getElementById('m3u-progress-pct').textContent    = '';
+  document.getElementById('m3u-progress-bytes').textContent  = '';
+  document.getElementById('m3u-progress-label').textContent  = 'Downloading…';
+  document.getElementById('m3u-error').style.display         = '';
+  document.getElementById('m3u-success').style.display       = '';
+}
+
+let m3uCachedSourceUrl = '';
+let m3uRefreshEnabled  = false;
+let debugLogging = false;
+
+function updateGetBtn() {
+  const btn = document.getElementById('m3u-get-btn');
+  const inputUrl = document.getElementById('m3u-url').value.trim();
+  btn.textContent = (m3uCachedSourceUrl && inputUrl === m3uCachedSourceUrl) ? 'Refresh' : 'Get';
+  btn.disabled = !inputUrl;
+}
+
+// #3/#6 — unified toggle state helper (uses CSS class instead of inline styles)
+function setToggleState(toggleId, enabled) {
+  document.getElementById(toggleId).classList.toggle('toggle-on', enabled);
+}
+
+function updateM3URefreshToggle() {
+  setToggleState('m3u-refresh-toggle', m3uRefreshEnabled);
+  document.getElementById('m3u-refresh-time').disabled = !m3uRefreshEnabled;
+}
+
+function updateDebugLogToggle() {
+  setToggleState('debug-log-toggle', debugLogging);
+  ['ffmpeg-log-path', 'ffmpeg-log-max-mb'].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled      = !debugLogging;
+    el.style.opacity = debugLogging ? '' : '0.4';
+  });
+}
+
+
+// Auto-load cache on page open
+async function loadCacheInfo() {
+  const hint = document.getElementById('m3u-cache-hint');
+  try {
+    const [cacheRes, settingsRes] = await Promise.all([POST('/api/m3u/use-cache', {}), GET('/api/settings')]);
+    if (cacheRes.ok) {
+      m3uReady = true;
+      m3uCachedSourceUrl = cacheRes.sourceUrl || '';
+      hint.textContent = '⊟ Cached file loaded — ' + cacheRes.count.toLocaleString() + ' channels · downloaded ' + fmtAge(cacheRes.fetchedAt) + '.';
+      hint.style.color = 'var(--accent)';
+      setSearchEnabled(true);
+      if (cacheRes.sourceUrl && !document.getElementById('m3u-url').value.trim()) {
+        document.getElementById('m3u-url').value = cacheRes.sourceUrl;
+      }
+      updateGetBtn();
+    } else {
+      m3uCachedSourceUrl = '';
+      hint.textContent = 'No cached file yet — enter a URL and click Get.';
+      hint.style.color = '';
+      updateGetBtn();
+    }
+    m3uRefreshEnabled = settingsRes.m3uAutoRefresh || false;
+    document.getElementById('m3u-refresh-time').value = settingsRes.m3uRefreshTime || '06:00';
+    updateM3URefreshToggle();
+    document.getElementById('srs-url').value       = settingsRes.srsUrl      || '';
+    document.getElementById('srs-watch-url').value = settingsRes.srsWatchUrl || '';
+    document.getElementById('max-slots').value      = String(settingsRes.maxSlots ?? 2);
+    updateSlotVisibility();
+    debugLogging = !!settingsRes.debugLogging;
+    document.getElementById('ffmpeg-log-path').value   = settingsRes.ffmpegLogPath      || '';
+    document.getElementById('ffmpeg-log-max-mb').value = settingsRes.ffmpegLogMaxSizeMb ?? 10;
+    updateDebugLogToggle();
+  } catch(e) {
+    hint.textContent = 'No cached file yet — enter a URL and click Get.';
+    hint.style.color = '';
+  }
+}
+
+// Shared download function — called by both Get and Refresh buttons
+function startM3UDownload(url) {
+  resetProgress();
+  const wasReady = m3uReady;
+  setSearchEnabled(false);
+  m3uReady = false;
+  document.getElementById('m3u-results-wrap').style.display = 'none';
+  document.getElementById('channel-list').innerHTML = '';
+
+  const getBtn = document.getElementById('m3u-get-btn');
+  getBtn.disabled = true;
+  getBtn.classList.add('btn-loading');
+
+  const progressWrap = document.getElementById('m3u-progress-wrap');
+  const bar          = document.getElementById('m3u-progress-bar');
+  const pctEl        = document.getElementById('m3u-progress-pct');
+  const bytesEl      = document.getElementById('m3u-progress-bytes');
+  const labelEl      = document.getElementById('m3u-progress-label');
+  progressWrap.style.display = '';
+
+  const sse = new EventSource('/api/m3u/download?url=' + encodeURIComponent(url));
+
+  sse.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'start') {
+      labelEl.textContent = 'Connecting…';
+    } else if (msg.type === 'progress') {
+      if (msg.pct >= 0) {
+        bar.style.width     = msg.pct + '%';
+        pctEl.textContent   = msg.pct + '%';
+        labelEl.textContent = 'Downloading…';
+      } else {
+        bar.style.transition = 'none';
+        bar.style.width      = '100%';
+        bar.style.opacity    = '0.5';
+        pctEl.textContent    = '';
+        labelEl.textContent  = 'Downloading…';
+      }
+      bytesEl.textContent = msg.total > 0
+        ? fmtBytes(msg.received) + ' / ' + fmtBytes(msg.total)
+        : fmtBytes(msg.received) + ' received';
+    } else if (msg.type === 'parsing') {
+      bar.style.transition = '';
+      bar.style.width      = '100%';
+      bar.style.opacity    = '1';
+      pctEl.textContent    = '100%';
+      labelEl.textContent  = 'Parsing channels…';
+      bytesEl.textContent  = '';
+    } else if (msg.type === 'done') {
+      sse.close();
+      m3uReady = true;
+      progressWrap.style.display = 'none';
+      const hint = document.getElementById('m3u-cache-hint');
+      hint.textContent = '⊟ Cached file loaded — ' + msg.count.toLocaleString() + ' channels · just downloaded.';
+      hint.style.color = 'var(--accent)';
+      showM3UMessage('success', msg.count.toLocaleString() + ' channels downloaded and ready to search.');
+      setSearchEnabled(true);
+      getBtn.disabled = false;
+      getBtn.classList.remove('btn-loading');
+      m3uCachedSourceUrl = url;
+      updateGetBtn();
+      toast('✓ ' + msg.count.toLocaleString() + ' channels loaded', 'ok');
+    } else if (msg.type === 'error') {
+      sse.close();
+      progressWrap.style.display = 'none';
+      showM3UMessage('error', msg.message);
+      getBtn.disabled = false;
+      getBtn.classList.remove('btn-loading');
+      if (wasReady) { m3uReady = true; setSearchEnabled(true); }
+    }
+  };
+
+  sse.onerror = () => {
+    sse.close();
+    progressWrap.style.display = 'none';
+    showM3UMessage('error', 'Connection lost. Check that the server is running.');
+    getBtn.disabled = false;
+    getBtn.classList.remove('btn-loading');
+    if (wasReady) { m3uReady = true; setSearchEnabled(true); }
+  };
+}
+
+// Get / Refresh button
+document.getElementById('m3u-get-btn').addEventListener('click', () => {
+  const url = document.getElementById('m3u-url').value.trim();
+  if (!url) { toast('Enter an M3U/Xtream URL first', 'error'); return; }
+  startM3UDownload(url, document.getElementById('m3u-get-btn'));
+});
+
+// Update button label as user types in the URL field
+document.getElementById('m3u-url').addEventListener('input', updateGetBtn);
+
+document.getElementById('m3u-refresh-toggle').addEventListener('click', async () => {
+  m3uRefreshEnabled = !m3uRefreshEnabled;
+  updateM3URefreshToggle();
+  await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
+  toast(m3uRefreshEnabled ? 'M3U auto-refresh enabled' : 'M3U auto-refresh disabled');
+});
+
+document.getElementById('m3u-refresh-time').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { m3uAutoRefresh: m3uRefreshEnabled, m3uRefreshTime: document.getElementById('m3u-refresh-time').value || '06:00' });
+  toast('Refresh time saved');
+}, 2000));
+
+document.getElementById('srs-url').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { srsUrl: document.getElementById('srs-url').value.trim() });
+  toast('SRS URL saved');
+}, 1500));
+document.getElementById('srs-watch-url').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { srsWatchUrl: document.getElementById('srs-watch-url').value.trim() });
+  toast('Watch URL saved');
+}, 1500));
+document.getElementById('max-slots').addEventListener('change', async () => {
+  await PUT('/api/settings', { maxSlots: parseInt(document.getElementById('max-slots').value) || 2 });
+  updateSlotVisibility();
+  toast('Max streams saved');
+});
+document.getElementById('debug-log-toggle').addEventListener('click', async () => {
+  debugLogging = !debugLogging;
+  updateDebugLogToggle();
+  await PUT('/api/settings', { debugLogging });
+  toast(debugLogging ? 'Debug logging enabled' : 'Debug logging disabled');
+});
+document.getElementById('ffmpeg-log-path').addEventListener('input', debounce(async () => {
+  await PUT('/api/settings', { ffmpegLogPath: document.getElementById('ffmpeg-log-path').value.trim() });
+  toast('Log path saved');
+}, 1500));
+document.getElementById('ffmpeg-log-max-mb').addEventListener('change', async () => {
+  await PUT('/api/settings', { ffmpegLogMaxSizeMb: parseInt(document.getElementById('ffmpeg-log-max-mb').value) || 10 });
+  toast('Max log size saved');
+});
+
+// Search
+// Live search
+function debounce(fn, ms) {
+  let t;
+  const d = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  d.cancel = () => clearTimeout(t);
+  return d;
+}
+
+const doSearch = debounce(async () => {
+  const query = document.getElementById('m3u-search').value.trim();
+  if (query.length < 2) {
+    document.getElementById('m3u-results-wrap').style.display = 'none';
+    document.getElementById('m3u-search-help').textContent = '';
+    return;
+  }
+  if (!m3uReady) return;
+  try {
+    const r = await POST('/api/m3u/search', { query });
+    renderChannels(r.channels, r.count, r.total);
+  } catch(e) { toast('Search error: ' + e.message, 'error'); }
+}, 200);
+
+document.getElementById('m3u-search').addEventListener('input', () => {
+  const val = document.getElementById('m3u-search').value;
+  if (val.length < 2) {
+    doSearch.cancel();
+    document.getElementById('m3u-results-wrap').style.display = 'none';
+    document.getElementById('m3u-search-help').textContent = '';
+    return;
+  }
+  doSearch();
+});
+
+function clearChannelSearch() {
+  document.getElementById('m3u-search').value = '';
+  document.getElementById('m3u-results-wrap').style.display = 'none';
+  document.getElementById('m3u-search-help').textContent = '';
+  document.getElementById('channel-list').innerHTML = '';
+}
+
+function renderChannels(channels, count, total) {
+  const card = document.getElementById('m3u-results-wrap');
+  const list = document.getElementById('channel-list');
+  list.scrollTop = 0; // reset scroll to top on new results
+  card.style.display = '';
+  const helpEl = document.getElementById('m3u-search-help');
+  helpEl.textContent = total !== undefined && count !== total
+    ? `Showing ${channels.length.toLocaleString()} of ${count.toLocaleString()} matches (${total.toLocaleString()} total)`
+    : `${channels.length.toLocaleString()} channels`;
+  list.innerHTML = '';
+  if (!channels.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">▶</div><p>No channels found.</p></div>';
+    return;
+  }
+  channels.forEach(ch => {
+    const div = document.createElement('div');
+    div.className = 'media-row ch-card';
+    const { channel: chChannel, title: chTitle } = parseName(ch.name);
+    div.innerHTML = `
+      ${logoImg(ch.logo)}
+      <div class="item-info">
+        <div class="item-name">${esc(chTitle || ch.name)}</div>
+        ${(chChannel || ch.eventTime) ? `<div class="item-meta">${ch.eventTime ? `<span class="item-tag tag-time">${fmtDt(ch.eventTime)}</span>` : ''}${channelTag(chChannel)}</div>` : ''}
+      </div>`;
+    div.addEventListener('click', () => openAddModal(ch));
+    list.appendChild(div);
+  });
+}
+
+function logoError(img) {
+  img.style.display = 'none';
+  img.nextElementSibling.classList.remove('hidden');
+}
+function logoImg(logo) {
+  if (logo) return `<img class="item-logo" src="/api/proxy-image?url=${encodeURIComponent(logo)}" loading="lazy" decoding="async" onerror="logoError(this)" alt=""/>` +
+    `<div class="item-logo-placeholder hidden">📺</div>`;
+  return `<div class="item-logo-placeholder">📺</div>`;
+}
+
+function parseName(name) {
+  if (!name) return { channel: null, title: '' };
+  const idx = name.indexOf(' | ');
+  if (idx === -1) return { channel: null, title: name.trim() };
+  const firstSegment = name.slice(0, idx).trim();
+  if (firstSegment.length > 30) return { channel: null, title: name.trim() };
+  return { channel: firstSegment, title: name.slice(idx + 3).trim() };
+}
+
+function channelTag(channel) {
+  if (!channel) return '';
+  return `<span class="item-tag tag-channel">${esc(channel)}</span>`;
+}
+
+/* ═══════════════════════════════════════════
+   Add-to-Schedule Modal
+═══════════════════════════════════════════ */
+function openAddModal(ch) {
+  document.getElementById('am-name').value   = ch.name;
+  document.getElementById('am-url').value    = ch.url;
+  document.getElementById('am-logo').value   = ch.logo || '';
+
+  // Use eventTime extracted by the server from tvg-name before stripping it from display name
+  if (ch.eventTime) {
+    const dt = new Date(ch.eventTime);
+    dt.setMinutes(dt.getMinutes() + 10);
+    document.getElementById('am-type').value  = 'once';
+    document.getElementById('am-runat').value = localDateTimeValue(dt);
+    toggleTypeFields('am', 'once');
+  } else {
+    document.getElementById('am-type').value  = 'now';
+    document.getElementById('am-runat').value = localDateTimeValue();
+    toggleTypeFields('am', 'now');
+  }
+  document.getElementById('am-frequency').value  = 'daily';
+  document.getElementById('am-recur-time').value = '20:00';
+  populateRecurDaySelect('am', 'daily');
+  populateSlotDropdown('am-slot');
+  showModal('add-modal');
+}
+document.getElementById('add-modal-cancel').addEventListener('click', () => hideModal('add-modal'));
+document.getElementById('add-modal-save').addEventListener('click', async () => {
+  const url  = document.getElementById('am-url').value.trim();
+  const body = buildSchedulePayload('am', url);
+  if (body.scheduleType === 'now') {
+    const logo = document.getElementById('am-logo').value || null;
+    hideModal('add-modal');
+    clearChannelSearch();
+    const max = parseInt(document.getElementById('max-slots')?.value || '2');
+    if (max === 1) {
+      const r = await POST('/api/play-now', { name: body.name, url, logo, preferredSlot: 'stream01', force: true });
+      r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+    } else {
+      showRelayPicker(url, body.name, logo, null);
+    }
+    return;
+  }
+  await POST('/api/schedules', body);
+  toast('Added to schedules!');
+  hideModal('add-modal');
+  clearChannelSearch();
+  loadSchedules();
+});
+
+// ── Relay Picker ──────────────────────────────────────────────────────────────
+document.getElementById('rp-cancel').addEventListener('click', () => hideModal('relay-picker-modal'));
+async function executeRelay(slot) {
+  hideModal('relay-picker-modal');
+  const { url, name, logo, onSuccess } = rpPendingPayload;
+  const occupied = slot && relayData.find(r => r.slot === slot);
+  const payload  = { url, name, logo };
+  if (slot)     payload.preferredSlot = slot;
+  if (occupied) payload.force         = true;
+  const r = await POST('/api/play-now', payload);
+  r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
+  if (r.ok && onSuccess) await onSuccess(r);
+  await loadHistory();
+  renderDashboard();
+}
+
+/* ═══════════════════════════════════════════
+   Settings
+═══════════════════════════════════════════ */
+document.getElementById('save-pw-btn').addEventListener('click', async () => {
+  const pw      = document.getElementById('set-pw-new').value;
+  const confirm = document.getElementById('set-pw-confirm').value;
+  const result  = document.getElementById('pw-result');
+  const showPwMsg = (msg, ok) => {
+    result.innerHTML = `<span class="pw-result" style="color:${ok?'var(--accent)':'var(--danger)'}">
+      ${ok ? '✓' : '✗'} ${msg}</span>`;
+  };
+  if (!pw)            return showPwMsg('Enter a new password.', false);
+  if (pw.length < 6)  return showPwMsg('Password must be at least 6 characters.', false);
+  if (pw !== confirm) return showPwMsg('Passwords do not match.', false);
+  const btn = document.getElementById('save-pw-btn');
+  btn.disabled = true;
+  try {
+    const r = await POST('/api/auth/change-password', { password: pw });
+    if (r.ok) {
+      showPwMsg('Password changed successfully.', true);
+      document.getElementById('set-pw-new').value     = '';
+      document.getElementById('set-pw-confirm').value = '';
+    } else {
+      showPwMsg(r.error || 'Failed to change password.', false);
+    }
+  } catch(e) { showPwMsg(e.message, false); }
+  btn.disabled  = false;
+});
+
+/* ═══════════════════════════════════════════
+   Modal helpers
+═══════════════════════════════════════════ */
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function hideModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  let downOnOverlay = false;
+  o.addEventListener('mousedown', e => { downOnOverlay = e.target === o; });
+  o.addEventListener('mouseup',   e => { if (downOnOverlay && e.target === o) o.classList.remove('show'); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const open = document.querySelector('.modal-overlay.show');
+  if (open) open.classList.remove('show');
+});
+
+/* ═══════════════════════════════════════════
+   Auth
+═══════════════════════════════════════════ */
+
+// ── Active Relays ─────────────────────────────────────────────────────────────
+let relayData        = [];
+let rpPendingPayload = null; // { url, name, logo, onSuccess }
+const hlsInstances = new Map();
+
+function showRelayPicker(url, name, logo, onSuccess) {
+  rpPendingPayload = { url, name, logo, onSuccess };
+  const max     = parseInt(document.getElementById('max-slots')?.value || '2');
+  const allFull = relayData.length >= max;
+  const list    = document.getElementById('rp-slot-list');
+  list.innerHTML = '';
+
+  function makeItem(slot, label, stateText, disabled, playing) {
+    const div = document.createElement('div');
+    div.className = 'rp-slot-item' + (disabled ? ' rp-slot-item--disabled' : '');
+    div.dataset.slot = slot;
+    div.innerHTML = `<span class="rp-slot-name">${label}</span>`
+                  + `<span class="rp-slot-state${playing ? ' rp-slot-playing' : ''}">${esc(stateText)}</span>`;
+    if (!disabled) div.addEventListener('click', () => executeRelay(slot));
+    return div;
+  }
+
+  // Auto option — disabled when all slots are full
+  list.appendChild(makeItem('', 'Auto', allFull ? 'All slots occupied' : 'First available slot', allFull, false));
+
+  // Per-slot options
+  for (let i = 0; i < max; i++) {
+    const slot   = `stream0${i + 1}`;
+    const active = relayData.find(r => r.slot === slot);
+    list.appendChild(makeItem(slot, slot, active ? active.name : 'Free', false, !!active));
+  }
+
+  showModal('relay-picker-modal');
+}
+
+function makeRelayCard(relay) {
+  const wrap = document.createElement('div');
+  wrap.dataset.slot = relay.slot;
+  const { channel, title } = parseName(relay.name);
+  const watchUrl = `${(document.getElementById('srs-watch-url')?.value || '').replace(/\/$/, '')}/${relay.slot}.m3u8`;
+  wrap.innerHTML = `
+    <div class="media-row">
+      ${logoImg(relay.logo)}
+      <div class="item-info">
+        <div class="item-name">${esc(title || relay.name)}</div>
+        <div class="item-meta">
+          <span class="item-tag tag-time">${fmtDt(relay.startedAt)}</span>
+          ${channelTag(channel)}
+          ${parseInt(document.getElementById('max-slots')?.value||'2')>1?`<span class="item-tag tag-slot">${esc(relay.slot)}</span>`:''}
+        </div>
+      </div>
+      <div class="np-header-actions">
+        <button class="sched-btn" data-preview="${esc(relay.slot)}" title="Show/Hide Preview">👁</button>
+        <button class="sched-btn sched-btn-stop" data-stop="${esc(relay.slot)}" title="Stop relay">■</button>
+      </div>
+    </div>
+    <div class="preview-wrap" data-preview-wrap="${esc(relay.slot)}" style="display:none;margin-top:12px;line-height:0">
+      <video controls muted playsinline style="width:100%;border-radius:8px;background:#000;height:360px;object-fit:contain;display:block"></video>
+    </div>`;
+  wrap.querySelector(`[data-preview="${relay.slot}"]`).addEventListener('click', () => toggleRelayPreview(relay.slot, watchUrl));
+  wrap.querySelector(`[data-stop="${relay.slot}"]`).addEventListener('click', () => stopRelay(relay.slot));
+  return wrap;
+}
+
+function toggleRelayPreview(slot, watchUrl) {
+  const list  = document.getElementById('relay-list');
+  const wrap  = list?.querySelector(`[data-preview-wrap="${slot}"]`);
+  const btn   = list?.querySelector(`[data-preview="${slot}"]`);
+  const video = wrap?.querySelector('video');
+  if (!wrap || !btn || !video) return;
+
+  const isVisible = wrap.style.display !== 'none';
+  if (isVisible) {
+    wrap.style.display = 'none';
+    btn.classList.remove('sched-btn-active');
+    if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
+    video.pause(); video.src = '';
+  } else {
+    wrap.style.display = '';
+    btn.className = 'sched-btn sched-btn-active';
+    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(watchUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      hlsInstances.set(slot, hls);
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = watchUrl;
+      video.play().catch(() => {});
+    } else {
+      toast('HLS not supported in this browser', 'error');
+    }
+  }
+}
+
+function renderRelays(relays) {
+  const list = document.getElementById('relay-list');
+  if (!list) return;
+  // Clean up HLS instances for relays that are no longer active
+  const activeSlots = new Set((relays || []).map(r => r.slot));
+  for (const [slot, hls] of hlsInstances) {
+    if (!activeSlots.has(slot)) { hls.destroy(); hlsInstances.delete(slot); }
+  }
+  if (!relays || relays.length === 0) {
+    list.innerHTML = '<div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>';
+    return;
+  }
+  list.innerHTML = '';
+  relays.forEach(r => list.appendChild(makeRelayCard(r)));
+}
+
+async function stopRelay(slot) {
+  if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
+  const r = await POST(`/api/relays/${slot}/stop`, {});
+  if (!r.ok) toast(r.error || 'Failed to stop relay', 'error');
+}
+
+document.getElementById('restartBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('restartBtn');
+  btn.disabled = true;
+  btn.textContent = '↺  Restarting…';
+  try {
+    await POST('/api/system/restart');
+    toast('Service is restarting…', 'warn');
+  } catch(e) {
+    toast('Restart failed: ' + e.message, 'error');
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = '↺  Restart Service'; }, 5000);
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await POST('/api/auth/logout');
+  location.href = '/login';
+});
+
+/* ═══════════════════════════════════════════
+   Helpers
+═══════════════════════════════════════════ */
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function localDateTimeValue(d) {
+  const dt = d || new Date();
+  if (!d) dt.setSeconds(0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  return dt.getFullYear() + '-' + pad(dt.getMonth()+1) + '-' + pad(dt.getDate()) +
+         'T' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+}
+function fmtDt(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+
+/* ═══════════════════════════════════════════
+   Init
+═══════════════════════════════════════════ */
+(async () => {
+  await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo(), loadAutoScheduler()]);
+  try {
+    const r = await GET('/api/relays');
+    relayData = r || [];
+    renderRelays(relayData);
+  } catch {}
+  // Restore page from URL path, default to dashboard
+  const savedPage = location.pathname.replace(/^\//, '') || 'dashboard';
+  navTo(savedPage);
+  connectDashboardSSE();
+  connectAutoSchedSSE();
+  // Remove loader only after fonts and data are ready — prevents FOUC
+  await document.fonts.ready;
+  document.getElementById('app-loader').remove();
+})();
+
+
+// ── Auto-Scheduler ────────────────────────────────────────────────────────────
+let asData = {};
+
+function renderAsLog() {
+  const log = document.getElementById('as-log');
+  if (!asData.activityLog || asData.activityLog.length === 0) {
+    log.innerHTML = '<div class="empty" style="padding:20px"><p>No activity yet.</p></div>';
+    return;
+  }
+  log.innerHTML = '<div class="item-list item-list--grid">' + asData.activityLog.map(e => {
+    const icons = { success: '✅', info: 'ℹ️', warn: '⚠️', error: '❌' };
+    const icon = icons[e.type] || 'ℹ️';
+    return `<div class="media-row">
+      <div class="item-info">
+        <div class="item-name">${icon} ${esc(e.message)}</div>
+        <div class="item-meta"><span class="item-tag tag-time">${fmtDt(e.timestamp)}</span></div>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function updateAsToggle() {
+  const on         = asData.enabled || false;
+  const refreshRow = document.getElementById('as-refresh-row');
+  setToggleState('as-toggle', on);
+  ['as-search', 'as-time', 'as-endpoint', 'as-run-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled      = !on;
+    el.style.opacity = on ? '' : '0.4';
+  });
+  refreshRow.style.opacity       = on ? '' : '0.4';
+  refreshRow.style.pointerEvents = on ? '' : 'none';
+}
+
+// ── SSE connections ───────────────────────────────────────────────────────────
+function makeSSE(url, onMessage) {
+  let sse = null;
+  function connect() {
+    if (sse) return;
+    sse = new EventSource(url);
+    sse.onmessage = e => {
+      if (!e.data || e.data.trim() === '') return; // ignore heartbeat
+      onMessage(JSON.parse(e.data));
+    };
+    let reconnecting = false;
+    sse.onerror = () => { sse.close(); sse = null; if (!reconnecting) { reconnecting = true; setTimeout(() => { reconnecting = false; connect(); }, 3000); } };
+  }
+  return connect;
+}
+
+const connectDashboardSSE = makeSSE('/api/events', ({ type, relays }) => {
+  if (type === 'history')  loadHistory();
+  if (type === 'schedule') loadSchedules();
+  if (type === 'relays')   { relayData = relays || []; renderRelays(relayData); }
+});
+
+const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
+  asData.activityLog = asData.activityLog || [];
+  asData.activityLog.unshift(entry);
+  if (asData.activityLog.length > 100) asData.activityLog.length = 100;
+  renderAsLog();
+});
+
+function updateAsRefreshToggle() {
+  setToggleState('as-refresh-toggle', asData.refreshBeforeRun || false);
+}
+
+async function loadAutoScheduler() {
+  asData = await GET('/api/auto-scheduler');
+  document.getElementById('as-search').value   = asData.searchString || '';
+  document.getElementById('as-time').value     = asData.checkTime || '';
+  document.getElementById('as-endpoint').value = asData.apiEndpoint || '';
+  populateSlotDropdown('as-slot', asData.preferredSlot || '');
+  updateAsToggle();
+  updateAsRefreshToggle();
+  renderAsLog();
+  connectAutoSchedSSE();
+}
+
+document.getElementById('as-toggle').addEventListener('click', async () => {
+  asData.enabled = !asData.enabled;
+  updateAsToggle();
+  if (asData.enabled) {
+    await POST('/api/auto-scheduler/enable');
+    toast('Auto-Scheduler enabled');
+  } else {
+    await POST('/api/auto-scheduler/disable');
+    toast('Auto-Scheduler disabled');
+  }
+});
+
+document.getElementById('as-refresh-toggle').addEventListener('click', () => {
+  asData.refreshBeforeRun = !asData.refreshBeforeRun;
+  updateAsRefreshToggle();
+  scheduleAsSave();
+});
+
+const scheduleAsSave = debounce(async () => {
+  await PUT('/api/auto-scheduler', {
+    searchString:     document.getElementById('as-search').value.trim(),
+    checkTime:        document.getElementById('as-time').value,
+    apiEndpoint:      document.getElementById('as-endpoint').value.trim(),
+    refreshBeforeRun: asData.refreshBeforeRun || false,
+    preferredSlot:    document.getElementById('as-slot').value || null,
+  });
+  toast('Auto-Scheduler saved');
+}, 2000);
+['as-search', 'as-time', 'as-endpoint'].forEach(id => {
+  document.getElementById(id).addEventListener('input', scheduleAsSave);
+});
+document.getElementById('as-slot').addEventListener('change', scheduleAsSave);
+
+document.getElementById('as-run-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('as-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  await POST('/api/auto-scheduler/run');
+  toast('Auto-Scheduler triggered!');
+  btn.disabled = false;
+  btn.textContent = 'Run Now';
+});
+
+
+
+// Schedules and history are updated via SSE — no polling needed
