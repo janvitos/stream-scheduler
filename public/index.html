@@ -453,7 +453,7 @@
     .es-relay .es-dot { background: var(--accent);  box-shadow: 0 0 6px rgba(0,229,160,.7); }
     .es-sched  .es-dot { background: var(--accent2); box-shadow: 0 0 6px rgba(0,119,255,.6); }
     .es-title { font-size: 13px; font-weight: 600; color: var(--muted2); }
-    .es-sub   { font-size: 11px; color: var(--muted); line-height: 1.6; display: none; }
+    .es-sub   { font-size: 11px; color: var(--muted); line-height: 1.6; }
 
     /* ── Toggle switch ── */
 
@@ -637,14 +637,14 @@
           <div class="card-title">📡 Active Relays</div>
         </div>
         <div id="relay-list">
-          <div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>Live</div><div class="es-title">No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>
+          <div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header"><div class="card-title">📅 Schedules</div></div>
         <div id="sched-list-wrap">
-          <div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>Scheduled</div><div class="es-title">No schedules yet</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>
+          <div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>No schedules</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>
         </div>
       </div>
 
@@ -1070,7 +1070,7 @@ async function loadSchedules() {
 function renderSchedules() {
   const wrap = document.getElementById('sched-list-wrap');
   if (!schedules.length) {
-    wrap.innerHTML = '<div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>Scheduled</div><div class="es-title">No schedules yet</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>';
+    wrap.innerHTML = '<div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>No schedules</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>';
     return;
   }
   wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
@@ -1926,7 +1926,7 @@ function renderRelays(relays) {
     if (!activeSlots.has(slot)) { hls.destroy(); hlsInstances.delete(slot); }
   }
   if (!relays || relays.length === 0) {
-    list.innerHTML = '<div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>Live</div><div class="es-title">No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>';
+    list.innerHTML = '<div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>';
     return;
   }
   list.innerHTML = '';
