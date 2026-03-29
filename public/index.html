@@ -435,6 +435,26 @@
     .empty-icon { font-size: 40px; margin: 0; opacity: .5; }
     .empty p { font-size: 13px; }
 
+    /* ── Themed empty state (relays / schedules) ── */
+    .es-wrap {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; padding: 24px 16px; border-radius: 10px; text-align: center;
+    }
+    .es-relay { background: rgba(0,229,160,.04); border: 1px dashed rgba(0,229,160,.2); }
+    .es-sched  { background: rgba(0,119,255,.04); border: 1px dashed rgba(0,119,255,.2); }
+    .es-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      border-radius: 99px; padding: 6px 12px;
+    }
+    .es-relay .es-badge { color: var(--accent);  background: rgba(0,229,160,.1); }
+    .es-sched  .es-badge { color: var(--accent2); background: rgba(0,119,255,.1); }
+    .es-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .es-relay .es-dot { background: var(--accent);  box-shadow: 0 0 6px rgba(0,229,160,.7); }
+    .es-sched  .es-dot { background: var(--accent2); box-shadow: 0 0 6px rgba(0,119,255,.6); }
+    .es-title { font-size: 13px; font-weight: 600; color: var(--muted2); }
+    .es-sub   { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
     /* ── Toggle switch ── */
 
 
@@ -617,7 +637,14 @@
           <div class="card-title">📡 Active Relays</div>
         </div>
         <div id="relay-list">
-          <span class="no-stream-active">// no active relays</span>
+          <div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>Live</div><div class="es-title">No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">📅 Schedules</div></div>
+        <div id="sched-list-wrap">
+          <div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>Scheduled</div><div class="es-title">No schedules yet</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>
         </div>
       </div>
 
@@ -626,13 +653,6 @@
           <div class="card-title">🕐 Recent Activity</div>
         </div>
         <div id="recent-history"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><div class="card-title">📅 Schedules</div></div>
-        <div id="sched-list-wrap">
-          <span class="no-stream-active">// no schedules yet</span>
-        </div>
       </div>
 
     </div>
@@ -1050,7 +1070,7 @@ async function loadSchedules() {
 function renderSchedules() {
   const wrap = document.getElementById('sched-list-wrap');
   if (!schedules.length) {
-    wrap.innerHTML = '<span class="no-stream-active">// no schedules yet</span>';
+    wrap.innerHTML = '<div class="es-wrap es-sched"><div class="es-badge"><span class="es-dot"></span>Scheduled</div><div class="es-title">No schedules yet</div><div class="es-sub">Add a one-time or recurring schedule<br>from the channel search</div></div>';
     return;
   }
   wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
@@ -1906,7 +1926,7 @@ function renderRelays(relays) {
     if (!activeSlots.has(slot)) { hls.destroy(); hlsInstances.delete(slot); }
   }
   if (!relays || relays.length === 0) {
-    list.innerHTML = '<span class="no-stream-active">// no active relays</span>';
+    list.innerHTML = '<div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>Live</div><div class="es-title">No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>';
     return;
   }
   list.innerHTML = '';
