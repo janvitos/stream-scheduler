@@ -950,33 +950,42 @@ async function toggleRelayPreview(slot, watchUrl) {
 
   const isVisible = video.style.display !== 'none';
 
+  const pvBadge = placeholder?.querySelector('.pv-badge');
+  const pvSub   = placeholder?.querySelector('.pv-sub');
+
+  function setPlaceholderState(loading) {
+    if (pvBadge) pvBadge.innerHTML = loading
+      ? '<span class="pv-dot"></span>Preview loading'
+      : '<span class="pv-dot"></span>No active preview';
+    if (pvSub) pvSub.innerHTML = loading
+      ? '<span class="pv-spinner"></span>'
+      : 'Start a preview by clicking on the preview button.';
+  }
+
   if (isVisible) {
     video.style.display = 'none';
-    if (placeholder) placeholder.style.display = '';
+    if (placeholder) { setPlaceholderState(false); placeholder.style.display = ''; }
     btn.classList.remove('sched-btn-active');
     if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
     video.pause(); video.src = '';
   } else {
-    if (placeholder) placeholder.style.display = 'none';
+    btn.className = 'sched-btn sched-btn-active';
+    setPlaceholderState(true);
 
     // Poll for stream readiness - SRS returns 404 when no stream exists, 200 when playing
     let attempts = 0;
     const maxAttempts = 12;
-    
+
     while (attempts < maxAttempts) {
       try {
         const resp = await fetch(watchUrl, { method: 'HEAD', timeout: 500 });
-        
         if (resp.status === 200) break; // Stream is playing
       } catch(e) {}
-      
       attempts++;
-      
-      if (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 300));
-      }
+      if (attempts < maxAttempts) await new Promise(r => setTimeout(r, 300));
     }
-    
+
+    if (placeholder) placeholder.style.display = 'none';
     video.style.display = 'block';
     btn.className = 'sched-btn sched-btn-active';
 

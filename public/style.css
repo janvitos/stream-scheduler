@@ -456,17 +456,18 @@ textarea { resize: vertical; min-height: 70px; }
 /* ── Preview empty state ── */
 .pv-wrap {
   display: flex; flex-direction: column; align-items: center;
-  gap: 10px; padding: 24px 16px; border-radius: 10px; text-align: center;
-  background: rgba(0,229,160,.04); border: 1px dashed rgba(0,229,160,.2);
+  min-height: 100px; gap: 10px; padding: 24px 16px; border-radius: 10px; text-align: center;
+  background: rgba(255,76,106,.04); border: 1px dashed rgba(255,76,106,.2);
 }
 .pv-badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
   border-radius: 99px; padding: 6px 12px;
-  color: var(--accent); background: rgba(0,229,160,.1);
+  color: var(--danger); background: rgba(255,76,106,.1);
 }
-.pv-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px rgba(0,229,160,.7); }
+.pv-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 6px rgba(255,76,106,.7); }
 .pv-sub { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.pv-spinner { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,76,106,.2); border-top-color: var(--danger); animation: spin .6s linear infinite; }
 
 /* ── Misc ── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
