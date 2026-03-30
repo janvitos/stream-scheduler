@@ -936,7 +936,7 @@ function makeRelayCard(relay) {
   return wrap;
 }
 
-function toggleRelayPreview(slot, watchUrl) {
+async function toggleRelayPreview(slot, watchUrl) {
   const list  = document.getElementById('relay-list');
   const wrap  = list?.querySelector(`[data-preview-wrap="${slot}"]`);
   const btn   = list?.querySelector(`[data-preview="${slot}"]`);
@@ -950,17 +950,45 @@ function toggleRelayPreview(slot, watchUrl) {
     if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
     video.pause(); video.src = '';
   } else {
+
+    // Show preview immediately when clicked
     wrap.style.display = '';
     btn.className = 'sched-btn sched-btn-active';
+    
+    // Poll for stream readiness - SRS returns 404 when no stream exists, 200 when playing
+    let attempts = 0;
+    const maxAttempts = 12;
+    
+    while (attempts < maxAttempts) {
+      try {
+        const resp = await fetch(watchUrl, { method: 'HEAD', timeout: 500 });
+        
+        if (resp.status === 200) break; // Stream is playing
+      } catch(e) {}
+      
+      attempts++;
+      
+      if (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+      
     if (typeof Hls !== 'undefined' && Hls.isSupported()) {
       const hls = new Hls();
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      // Add onError handler to catch manifest fetch issues
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal && !video.src) {
+          // Fallback: try direct src after delay
+          setTimeout(() => { video.src = watchUrl; video.play().catch(() => {}); }, 1000);
+        }
+      });
       hls.loadSource(watchUrl);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
       hlsInstances.set(slot, hls);
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = watchUrl;
-      video.play().catch(() => {});
+      // Safari fallback with small delay for HLS buffer
+      setTimeout(() => { video.src = watchUrl; video.play().catch(() => {}); }, 100);
     } else {
       toast('HLS not supported in this browser', 'error');
     }
