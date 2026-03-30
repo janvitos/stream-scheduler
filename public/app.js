@@ -931,7 +931,7 @@ function makeRelayCard(relay) {
     <div class="preview-wrap" data-preview-wrap="${esc(relay.slot)}" style="margin-top:12px">
       <div class="pv-wrap" data-preview-placeholder="${esc(relay.slot)}">
         <div class="pv-badge"><span class="pv-dot"></span>No active preview</div>
-        <div class="pv-sub">Start a preview by clicking on the preview button.</div>
+        <div class="pv-sub">Start a preview by clicking on the preview button</div>
       </div>
       <video controls muted playsinline class="preview-video" style="display:none"></video>
     </div>`;

@@ -555,7 +555,19 @@ textarea { resize: vertical; min-height: 70px; }
 
   /* Modal: full-width on mobile */
   .modal { max-width: 100%; margin: 0 12px; padding: 20px; }
-  
+
+  /* Schedule actions collapse below item-meta, aligned to item-info column */
+  .media-row {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    column-gap: 14px;
+    row-gap: 8px;
+    align-items: start;
+  }
+  .media-row > .item-logo,
+  .media-row > .item-logo-placeholder { grid-row: span 2; align-self: center; }
+  .sched-actions { grid-column: 2; }
+
 }
 
 /* ── Tablet (641–900px) ── */
