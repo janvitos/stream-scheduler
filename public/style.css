@@ -413,11 +413,19 @@ textarea { resize: vertical; min-height: 70px; }
 
 
 /* ── Empty state ── */
-.empty {
-  text-align: center; padding: 0px 20px 40px; color: var(--muted);
-}
+.empty { text-align: center; padding: 0px 20px 40px; color: var(--muted); }
 .empty-icon { font-size: 40px; margin: 0; opacity: .5; }
 .empty p { font-size: 13px; }
+
+/* ── Preview video player styles ── */
+.preview-video {
+  width:100%;
+  border-radius:8px;
+  background:#000;
+  min-height:360px;
+  object-fit:contain;
+  display:none
+}
 
 /* ── Themed empty state (relays / schedules) ── */
 .es-wrap {

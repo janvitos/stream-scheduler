@@ -929,7 +929,7 @@ function makeRelayCard(relay) {
       </div>
     </div>
     <div class="preview-wrap" data-preview-wrap="${esc(relay.slot)}" style="display:none;margin-top:12px;line-height:0">
-      <video controls muted playsinline style="width:100%;border-radius:8px;background:#000;height:360px;object-fit:contain;display:block"></video>
+      <video controls muted playsinline class="preview-video"></video>
     </div>`;
   wrap.querySelector(`[data-preview="${relay.slot}"]`).addEventListener('click', () => toggleRelayPreview(relay.slot, watchUrl));
   wrap.querySelector(`[data-stop="${relay.slot}"]`).addEventListener('click', () => stopRelay(relay.slot));
