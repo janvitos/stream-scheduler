@@ -928,8 +928,12 @@ function makeRelayCard(relay) {
         <button class="sched-btn sched-btn-stop" data-stop="${esc(relay.slot)}" title="Stop relay">■</button>
       </div>
     </div>
-    <div class="preview-wrap" data-preview-wrap="${esc(relay.slot)}" style="display:none;margin-top:12px;line-height:0">
-      <video controls muted playsinline class="preview-video"></video>
+    <div class="preview-wrap" data-preview-wrap="${esc(relay.slot)}" style="margin-top:12px">
+      <div class="pv-wrap" data-preview-placeholder="${esc(relay.slot)}">
+        <div class="pv-badge"><span class="pv-dot"></span>No active preview</div>
+        <div class="pv-sub">Start a preview by clicking on the preview button.</div>
+      </div>
+      <video controls muted playsinline class="preview-video" style="display:none"></video>
     </div>`;
   wrap.querySelector(`[data-preview="${relay.slot}"]`).addEventListener('click', () => toggleRelayPreview(relay.slot, watchUrl));
   wrap.querySelector(`[data-stop="${relay.slot}"]`).addEventListener('click', () => stopRelay(relay.slot));
@@ -940,21 +944,21 @@ async function toggleRelayPreview(slot, watchUrl) {
   const list  = document.getElementById('relay-list');
   const wrap  = list?.querySelector(`[data-preview-wrap="${slot}"]`);
   const btn   = list?.querySelector(`[data-preview="${slot}"]`);
-  const video = wrap?.querySelector('video');
+  const video       = wrap?.querySelector('video');
+  const placeholder = wrap?.querySelector('[data-preview-placeholder]');
   if (!wrap || !btn || !video) return;
 
-  const isVisible = wrap.style.display !== 'none';
+  const isVisible = video.style.display !== 'none';
+
   if (isVisible) {
-    wrap.style.display = 'none';
+    video.style.display = 'none';
+    if (placeholder) placeholder.style.display = '';
     btn.classList.remove('sched-btn-active');
     if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
     video.pause(); video.src = '';
   } else {
+    if (placeholder) placeholder.style.display = 'none';
 
-    // Show preview immediately when clicked
-    wrap.style.display = '';
-    btn.className = 'sched-btn sched-btn-active';
-    
     // Poll for stream readiness - SRS returns 404 when no stream exists, 200 when playing
     let attempts = 0;
     const maxAttempts = 12;
@@ -972,7 +976,10 @@ async function toggleRelayPreview(slot, watchUrl) {
         await new Promise(r => setTimeout(r, 300));
       }
     }
-      
+    
+    video.style.display = 'block';
+    btn.className = 'sched-btn sched-btn-active';
+
     if (typeof Hls !== 'undefined' && Hls.isSupported()) {
       const hls = new Hls();
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));

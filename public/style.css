@@ -417,14 +417,20 @@ textarea { resize: vertical; min-height: 70px; }
 .empty-icon { font-size: 40px; margin: 0; opacity: .5; }
 .empty p { font-size: 13px; }
 
+/* ── Preview video player wrap styles ── */
+.preview-wrap {
+  background: #000;
+  border-radius: 8px;
+  margin-top: 12px;
+  line-height:0
+}
+
 /* ── Preview video player styles ── */
 .preview-video {
-  width:100%;
-  border-radius:8px;
-  background:#000;
-  min-height:360px;
-  object-fit:contain;
-  display:none
+  border-radius: 8px;
+  display: block;
+  object-fit: contain;
+  width: 100%;
 }
 
 /* ── Themed empty state (relays / schedules) ── */
@@ -446,6 +452,21 @@ textarea { resize: vertical; min-height: 70px; }
 .es-sched  .es-dot { background: var(--accent2); box-shadow: 0 0 6px rgba(0,119,255,.6); }
 .es-title { font-size: 13px; font-weight: 600; color: var(--muted2); }
 .es-sub   { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+/* ── Preview empty state ── */
+.pv-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 24px 16px; border-radius: 10px; text-align: center;
+  background: rgba(0,229,160,.04); border: 1px dashed rgba(0,229,160,.2);
+}
+.pv-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  border-radius: 99px; padding: 6px 12px;
+  color: var(--accent); background: rgba(0,229,160,.1);
+}
+.pv-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px rgba(0,229,160,.7); }
+.pv-sub { font-size: 11px; color: var(--muted); line-height: 1.6; }
 
 /* ── Misc ── */
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -533,9 +554,7 @@ textarea { resize: vertical; min-height: 70px; }
 
   /* Modal: full-width on mobile */
   .modal { max-width: 100%; margin: 0 12px; padding: 20px; }
-
-  /* M3U search row: wrap */
-
+  
 }
 
 /* ── Tablet (641–900px) ── */
