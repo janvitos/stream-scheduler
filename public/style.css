@@ -497,7 +497,9 @@ textarea { resize: vertical; min-height: 70px; }
 .mt-16 { margin-top: 16px; }
 .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
 .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
-.btn-loading::after { content: ''; position: absolute; top: 50%; left: 50%; margin-top: -7px; margin-left: -7px; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+.btn-loading::after { content: ''; position: absolute; top: 50%; left: 50%; margin-top: -7px; margin-left: -7px; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.15); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+.btn-primary.btn-loading::after { border-color: rgba(0,229,160,.15); border-top-color: var(--accent); }
+.btn-danger.btn-loading::after  { border-color: rgba(255,76,106,.15); border-top-color: var(--danger); }
 @keyframes spin { to { transform: rotate(360deg); } }
 #m3u-get-btn, #as-run-btn { min-width: 90px; justify-content: center; }
 

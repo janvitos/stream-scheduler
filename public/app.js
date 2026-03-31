@@ -1270,11 +1270,17 @@ document.getElementById('as-slot').addEventListener('change', executeAsSave);
 document.getElementById('as-run-btn').addEventListener('click', async () => {
   const btn = document.getElementById('as-run-btn');
   btn.disabled = true;
-  btn.textContent = 'Running…';
-  await POST('/api/auto-scheduler/run');
-  toast('Auto-Scheduler triggered!');
-  btn.disabled = false;
-  btn.textContent = 'Run Now';
+  btn.classList.add('btn-loading');
+  try {
+    const r = await POST('/api/auto-scheduler/run');
+    if (r.error) throw new Error(r.error);
+    toast('Auto-Scheduler run completed!');
+  } catch (e) {
+    toast(e.message || 'Auto-Scheduler run failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+  }
 });
 
 
