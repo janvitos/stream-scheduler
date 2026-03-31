@@ -20,7 +20,7 @@
 -   **🏗️ Modular Architecture** — Newly refactored logic split into dedicated service engines (`relay-engine`, `m3u-parser`, `auto-scheduler`) for enhanced stability and maintainability.
 -   **🛡️ Resilient Relays** — FFmpeg processes are spawned **detached** from the Node.js parent. They survive server crashes and full service restarts; the engine automatically re-connects to existing processes on boot for zero-gap monitoring.
 -   **⚡ High-Performance Parsing** — M3U handling has been optimized with stream-based I/O and non-blocking JSON persistence, drastically reducing memory overhead for large playlists.
--   **📅 Intelligent Auto-Scheduler** — Automatically fetches and schedules sports events via the ESPN API. Features full time-zone awareness (DST-safe) and smart channel matching.
+-   **📅 Intelligent Auto-Scheduler** — Automatically fetches and schedules sports events via API. Features full time-zone awareness (DST-safe) and smart channel matching.
 -   **🔄 Auto-Recovery** — Built-in watchdog that detects unexpected FFmpeg exits or stream stalls and automatically re-spawns the relay after a 3-second buffer.
 -   **🎨 Premium UI / UX** — A modern, glassmorphic "framed" interface built with vanilla JS/CSS. Features Inter typography, real-time SSE updates, and a responsive mobile-first layout.
 -   **📡 Stream Monitoring** — Integrated Activity Log with real-time SSE event streaming, detailed per-slot FFmpeg logging (configurable), and in-browser HLS previews.
@@ -79,7 +79,7 @@ An optimized parser designed for speed and low memory usage.
 
 ### Auto-Scheduler (`src/auto-scheduler.js`)
 The "brain" of the application for automated event coverage.
--   **ESPN Integration**: Queries collegiate and professional sports APIs daily.
+-   **API Integration**: Queries streaming APIs daily.
 -   **Fuzzy Matching**: Matches API event names against your M3U channel list to find the best broadcast source.
 
 ---
@@ -132,14 +132,14 @@ The "brain" of the application for automated event coverage.
 
 The Auto-Scheduler queries a sports API on a daily schedule and automatically creates stream entries when a match is found.
 
-1. Set a **Search String** (e.g. `Texas Tech`) to match against API results.
-2. Set an **API Endpoint** — defaults to the ESPN college baseball scoreboard.
+1. Set a **Search String** (e.g. `Blue Jays`) to match against API results.
+2. Set an **API Endpoint** — defaults to the college baseball scoreboard.
 3. Set a **Check Time** — the time of day the scheduler will run (Eastern timezone).
 4. Set a **Default Relay Slot** — optionally pin auto-created schedules to a specific relay slot.
 5. Optionally enable **Refresh M3U before running** to ensure channels are up to date.
 6. Toggle **Auto-Scheduler** on to activate.
 
-Matched events are scheduled 10 minutes before their listed start time. Game times are sourced exclusively from the ESPN API (UTC, converted to Eastern Time via `America/New_York`) to ensure correct DST handling year-round.
+Matched events are scheduled 10 minutes before their listed start time. Game times are sourced exclusively from the API (UTC, converted to Eastern Time via `America/New_York`) to ensure correct DST handling year-round.
 
 ### Relay Slots
 
