@@ -1,4 +1,3 @@
-const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
 async function runAutoScheduler(context) {
@@ -46,10 +45,17 @@ async function runAutoScheduler(context) {
 
   let events;
   try {
-    const resp = await axios.get(`${apiEndpoint}?dates=${dateStr}`, { timeout: 10000 });
-    events = resp.data.events || [];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const resp = await fetch(`${apiEndpoint}?dates=${dateStr}`, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
+    
+    const data = await resp.json();
+    events = data.events || [];
   } catch (e) {
-    logAutoActivity('error', `API error: ${e.message}`);
+    logAutoActivity('error', `API error: ${e.name === 'AbortError' ? 'Request timed out' : e.message}`);
     return;
   }
 

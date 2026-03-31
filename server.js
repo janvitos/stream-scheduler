@@ -8,7 +8,6 @@ const path         = require('path');
 const fs           = require('fs');
 const cron         = require('node-cron');
 const { spawn }    = require('child_process');
-const axios        = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -166,11 +165,19 @@ app.get('/api/proxy-image', async (req, res) => {
   if (!url) return res.status(400).end();
   if (!/^https?:\/\//i.test(url)) return res.status(400).end();
   try {
-    const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 5000 });
-    const contentType = response.headers['content-type'] || 'image/png';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await response.arrayBuffer();
+    
     res.set('Content-Type', contentType);
     res.set('Cache-Control', 'public, max-age=86400');
-    res.send(response.data);
+    res.send(Buffer.from(arrayBuffer));
   } catch (e) {
     res.status(404).end();
   }
@@ -388,12 +395,23 @@ app.get('/api/m3u/download', async (req, res) => {
   try {
     send({ type: 'start' });
 
-    const resp = await axios.get(url, { timeout: 120000, responseType: 'stream' });
-    const total = parseInt(resp.headers['content-length'] || '0', 10);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    const resp = await fetch(url, { signal: controller.signal });
+    // In Node fetch, resp.body is already a readable stream (web stream)
+    
+    if (!resp.ok) {
+      send({ type: 'error', message: `Server returned ${resp.status} ${resp.statusText}` });
+      res.end();
+      return;
+    }
+
+    const total = parseInt(resp.headers.get('content-length') || '0', 10);
     let received = 0;
     const chunks = [];
 
-    resp.data.on('data', (chunk) => {
+    // Node 18+ fetch returns a Web Stream. We can use for-await-of on it.
+    for await (const chunk of resp.body) {
       chunks.push(chunk);
       received += chunk.length;
       if (total > 0) {
@@ -402,32 +420,27 @@ app.get('/api/m3u/download', async (req, res) => {
       } else {
         send({ type: 'progress', received, total: 0, pct: -1 });
       }
-    });
+    }
 
-    resp.data.on('end', () => {
-      try {
-        const raw = Buffer.concat(chunks).toString('utf8');
-        send({ type: 'parsing' });
-        const channels = parseM3U(raw);
-        m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: received };
-        saveM3UCacheStreamed()
-          .catch(err => console.warn('Could not persist M3U cache:', err.message));
-        logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded`);
-        send({ type: 'done', count: channels.length });
-      } catch (parseErr) {
-        logAutoActivity('error', `M3U manual refresh failed: ${parseErr.message}`);
-        send({ type: 'error', message: 'Parse error: ' + parseErr.message });
-      }
-      res.end();
-    });
+    clearTimeout(timeout);
 
-    resp.data.on('error', (streamErr) => {
-      send({ type: 'error', message: streamErr.message });
-      res.end();
-    });
+    try {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      send({ type: 'parsing' });
+      const channels = parseM3U(raw);
+      m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: received };
+      saveM3UCacheStreamed()
+        .catch(err => console.warn('Could not persist M3U cache:', err.message));
+      logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded`);
+      send({ type: 'done', count: channels.length });
+    } catch (parseErr) {
+      logAutoActivity('error', `M3U manual refresh failed: ${parseErr.message}`);
+      send({ type: 'error', message: 'Parse error: ' + parseErr.message });
+    }
+    res.end();
 
   } catch (e) {
-    send({ type: 'error', message: e.message });
+    send({ type: 'error', message: e.name === 'AbortError' ? 'Request timed out' : e.message });
     res.end();
   }
 });
@@ -513,10 +526,20 @@ async function refreshM3U() {
   }
   const url = m3uMemCache.sourceUrl;
   serverLog('[M3U] Refreshing from:', url);
-  const resp = await axios.get(url, { timeout: 120000, responseType: 'arraybuffer' });
-  const raw = Buffer.from(resp.data).toString('utf8');
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  const resp = await fetch(url, { signal: controller.signal });
+  clearTimeout(timeout);
+  
+  if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
+  
+  const arrayBuffer = await resp.arrayBuffer();
+  const data = Buffer.from(arrayBuffer);
+  const raw = data.toString('utf8');
   const channels = parseM3U(raw);
-  m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: resp.data.byteLength };
+  
+  m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: data.byteLength };
   await saveM3UCacheStreamed();
   serverLog(`[M3U] Refreshed: ${channels.length} channels`);
   return channels.length;
