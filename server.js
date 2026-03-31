@@ -34,7 +34,15 @@ const PORT   = config.port || 3000;
 
 // ─── Persistence helpers ──────────────────────────────────────────────────────
 const readJSON  = (p, def) => { try { return JSON.parse(fs.readFileSync(p)); } catch { return def; } };
-const writeJSON = (p, d)   => fs.writeFileSync(p, JSON.stringify(d, null, 2));
+
+const writeLocks = new Map();
+const writeJSON = (p, d) => {
+  const dataStr = JSON.stringify(d, null, 2);
+  let lock = writeLocks.get(p) || Promise.resolve();
+  lock = lock.then(() => fs.promises.writeFile(p, dataStr))
+             .catch(err => console.error(`[FS] Error writing ${p}:`, err));
+  writeLocks.set(p, lock);
+};
 
 let schedules     = readJSON(SCHED_PATH, []);
 let autoScheduler = readJSON(AUTO_SCHED_PATH, {
@@ -384,19 +392,24 @@ app.post('/api/m3u/search', (req, res) => {
   if (!m3uMemCache) return res.status(404).json({ error: 'No M3U loaded — download one or load from cache first' });
   const q = (query || '').slice(0, 100).toLowerCase().trim();
   const results = q
-    ? m3uMemCache.channels.filter(c => (c.name || '').toLowerCase().includes(q))
+    ? m3uMemCache.channels.filter(c => (c.searchName || '').includes(q))
     : m3uMemCache.channels;
   res.json({ count: results.length, total: m3uMemCache.channels.length, channels: results.slice(0, 500) });
 });
 
 // ─── M3U Parser ───────────────────────────────────────────────────────────────
 function parseM3U(text) {
-  const lines    = text.split(/\r?\n/);
   const channels = [];
-  let   meta     = null;
+  let meta = null;
+  let start = 0;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+  while (start < text.length) {
+    let end = text.indexOf('\n', start);
+    if (end === -1) end = text.length;
+    const line = text.slice(start, end).trim();
+    start = end + 1;
+    if (!line) continue;
+
     if (line.startsWith('#EXTINF:')) {
       meta = { name: '', logo: '', group: '', id: '', eventTime: null };
 
@@ -421,9 +434,9 @@ function parseM3U(text) {
       meta.name = rawName.replace(/\s*\(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?\)\s*$/, '').replace(/\s*\|\s*$/, '').trim();
       if (!meta.name && nameMatch) meta.name = nameMatch[1].trim();
 
-    } else if (line && !line.startsWith('#') && meta !== null) {
+    } else if (!line.startsWith('#') && meta !== null) {
       if (!meta.name) meta.name = line;
-      channels.push({ ...meta, url: line });
+      channels.push({ ...meta, url: line, searchName: (meta.name || '').toLowerCase() });
       meta = null;
     }
   }
@@ -732,12 +745,12 @@ async function runAutoScheduler() {
       ?.team?.location?.toLowerCase() || null;
 
     let matching = channels.filter(ch => {
-      const name = (ch.name || '').toLowerCase();
+      const name = ch.searchName || (ch.name || '').toLowerCase();
       return name.includes(search) && name.includes(dateLow);
     });
 
     if (matching.length > 1 && opponent) {
-      const byOpponent = matching.filter(ch => ch.name.toLowerCase().includes(opponent));
+      const byOpponent = matching.filter(ch => (ch.searchName || (ch.name || '').toLowerCase()).includes(opponent));
       if (byOpponent.length > 0) matching = byOpponent;
     }
 

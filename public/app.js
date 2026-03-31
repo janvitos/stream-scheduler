@@ -125,7 +125,9 @@ function renderSchedules() {
   }
   wrap.innerHTML = '<div class="item-list" id="sched-list"></div>';
   const list = document.getElementById('sched-list');
-  [...schedules].reverse().forEach(s => list.appendChild(makeSchedItem(s)));
+  const frag = document.createDocumentFragment();
+  [...schedules].reverse().forEach(s => frag.appendChild(makeSchedItem(s)));
+  list.appendChild(frag);
 }
 
 function makeSchedItem(s) {
@@ -150,13 +152,6 @@ function makeSchedItem(s) {
       <button class="sched-btn sched-btn-edit"   title="Edit"     data-action="edit"   data-id="${s.id}">✎</button>
       <button class="sched-btn sched-btn-delete" title="Delete"   data-action="delete" data-id="${s.id}">✖</button>
     </div>`;
-  div.querySelectorAll('[data-action]').forEach(el => {
-    const action = el.dataset.action;
-    const id     = el.dataset.id;
-    if (action === 'run')    el.addEventListener('click', () => runNow(id));
-    if (action === 'delete') el.addEventListener('click', () => deleteSchedule(id));
-    if (action === 'edit')   el.addEventListener('click', () => openEditModal(id));
-  });
   return div;
 }
 
@@ -182,6 +177,34 @@ async function deleteSchedule(id) {
   toast('Schedule deleted', 'warn');
   loadSchedules();
 }
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.sched-btn[data-action]');
+  if (btn) {
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+    if (action === 'run') runNow(id);
+    if (action === 'delete') deleteSchedule(id);
+    if (action === 'edit') openEditModal(id);
+    return;
+  }
+
+  const histRow = e.target.closest('.ch-card[data-hist-url]');
+  if (histRow) {
+    const url = histRow.dataset.histUrl;
+    const name = histRow.dataset.histName;
+    const logo = histRow.dataset.histLogo || null;
+    const max = parseInt(document.getElementById('max-slots')?.value || '2');
+    if (max === 1) {
+      histRow.style.pointerEvents = 'none';
+      const r = await POST('/api/play-now', { url, name, logo, preferredSlot: 'stream01', force: true });
+      r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
+      histRow.style.pointerEvents = '';
+    } else {
+      showRelayPicker(url, name, logo, null);
+    }
+  }
+});
 
 /* ═══════════════════════════════════════════
    Schedule Modal
@@ -376,7 +399,9 @@ async function renderDashboard() {
   if (!recent.length) { rh.innerHTML = '<div class="empty"><div class="empty-icon">☰</div><p>No recent activity.</p></div>'; return; }
   rh.innerHTML = '<div class="item-list item-list--grid"></div>';
   const hl = rh.querySelector('.item-list');
-  recent.forEach(h => hl.appendChild(makeHistoryItem(h)));
+  const frag = document.createDocumentFragment();
+  recent.forEach(h => frag.appendChild(makeHistoryItem(h)));
+  hl.appendChild(frag);
 }
 
 /* ═══════════════════════════════════════════
@@ -390,6 +415,11 @@ async function loadHistory() {
 function makeHistoryItem(h) {
   const div = document.createElement('div');
   div.className = h.url ? 'media-row ch-card' : 'media-row';
+  if (h.url) {
+    div.dataset.histUrl = h.url;
+    div.dataset.histName = h.scheduleName || 'Unknown';
+    if (h.logo) div.dataset.histLogo = h.logo;
+  }
   const { channel: hChannel, title: hTitle } = parseName(h.scheduleName);
   div.innerHTML = `
     ${logoImg(h.logo)}
@@ -400,19 +430,6 @@ function makeHistoryItem(h) {
         ${channelTag(hChannel)}
       </div>
     </div>`;
-  if (h.url) {
-    div.addEventListener('click', async () => {
-      const max = parseInt(document.getElementById('max-slots')?.value || '2');
-      if (max === 1) {
-        div.style.pointerEvents = 'none';
-        const r = await POST('/api/play-now', { url: h.url, name: h.scheduleName, logo: h.logo || null, preferredSlot: 'stream01', force: true });
-        r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
-        div.style.pointerEvents = '';
-      } else {
-        showRelayPicker(h.url, h.scheduleName, h.logo || null, null);
-      }
-    });
-  }
   return div;
 }
 
@@ -718,6 +735,7 @@ function renderChannels(channels, count, total) {
     list.innerHTML = '<div class="empty"><div class="empty-icon">▶</div><p>No channels found.</p></div>';
     return;
   }
+  const frag = document.createDocumentFragment();
   channels.forEach(ch => {
     const div = document.createElement('div');
     div.className = 'media-row ch-card';
@@ -729,8 +747,9 @@ function renderChannels(channels, count, total) {
         ${(chChannel || ch.eventTime) ? `<div class="item-meta">${ch.eventTime ? `<span class="item-tag tag-time">${fmtDt(ch.eventTime)}</span>` : ''}${channelTag(chChannel)}</div>` : ''}
       </div>`;
     div.addEventListener('click', () => openAddModal(ch));
-    list.appendChild(div);
+    frag.appendChild(div);
   });
+  list.appendChild(frag);
 }
 
 function logoError(img) {
