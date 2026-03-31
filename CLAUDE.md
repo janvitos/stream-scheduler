@@ -16,20 +16,25 @@ No build step, no tests, no linter configured.
 
 ## Architecture
 
-This is a single-file Node.js backend (`server.js`) with a single-page frontend (`public/index.html`). There is no bundler or framework — the frontend is vanilla JS/CSS inline in the HTML file.
+The backend is `server.js` with three extracted modules in `src/`. The frontend is `public/index.html` — a single-page app with all CSS and JS inline. There is no bundler or framework.
 
-### Backend (`server.js`)
+### Backend
 
-All server logic lives in one file. Key sections, in order:
+`server.js` handles config/startup, auth, REST API, scheduler engine, SSE, and wires together the modules from `src/`:
 
-- **Config/persistence** — reads `data/config.json` at startup (exits if missing). All state is held in memory and flushed to JSON files in `data/` on mutation via `readJSON`/`writeJSON` helpers.
-- **Auth** — session-based (`express-session`). `requireAuth` middleware gates all routes below its `app.use()` call. Password is bcrypt-hashed in `config.json`.
+- **`src/relay-engine.js`** — exported as a factory `createRelayEngine(context)`. Contains `findFreeSlot`, `spawnRelay`, `killRelay`, `launchStream`, auto-restart logic, and startup relay restoration. Receives shared state via the `context` object (settings getter, relay Map, FFMPEG_PATH, callbacks).
+- **`src/auto-scheduler.js`** — exported as `runAutoScheduler(context)`. Hits the ESPN scoreboard API, finds games matching a search string, searches the M3U cache for a matching channel, and auto-creates a one-time schedule. ESPN UTC time is converted to Eastern via `America/New_York` (DST-aware) — M3U `eventTime` overrides are intentionally not used.
+- **`src/m3u-parser.js`** — exported as `parseM3U(text)`. Parses `#EXTINF` lines into channel objects with `name`, `logo`, `group`, `id`, `eventTime`, and `url`.
+
+Key sections of `server.js`, in order:
+
+- **Config/persistence** — reads `data/config.json` at startup (exits if missing). All state is held in memory and flushed to JSON files in `data/` on mutation via `readJSON`/`writeJSON` helpers. `writeJSON` is serialised per-file using a promise chain (`writeLocks` Map) to avoid concurrent write corruption.
+- **Auth** — session-based (`express-session`) with a custom `FileStore` that persists to `data/sessions.json`. `requireAuth` middleware gates all routes below its `app.use()` call. Password is bcrypt-hashed in `config.json`.
 - **REST API** — standard CRUD for schedules (`/api/schedules`), settings (`/api/settings`), history (`/api/history`), relays (`/api/relays`), and M3U/Xtream (`/api/m3u/*`). Key endpoints: `POST /api/play-now` launches a relay immediately (accepts optional `preferredSlot` and `force` — when `force: true` and the target slot is occupied, `killRelay` is called first, followed by a 1-second pause to let SRS release the RTMP slot before the new publisher connects); `DELETE /api/relays/:slot` stops a relay. A catch-all `GET *` route at the bottom serves `index.html` for History API navigation (e.g. `/settings`).
 - **Scheduler engine** — `registerSchedule`/`unregisterSchedule` manage a `cronJobs` Map. One-time schedules use `setTimeout`; recurring use `node-cron`. All enabled schedules are re-registered at startup. `buildCronFromFrequency(frequency, recurTime, recurDay)` derives a 5-field cron string from the friendly `frequency` / `recurTime` / `recurDay` fields stored on the schedule; this is called on create and edit so `cronExpr` is always kept in sync.
-- **Relay engine** — `findFreeSlot(preferred)` picks the next available slot up to `settings.maxSlots`. `spawnRelay(slot, s)` spawns FFmpeg (see FFmpeg path resolution below) with `detached: true` + `proc.unref()` so the FFmpeg process is independent of Node.js and survives an NSSM service stop/restart. Re-encodes the IPTV stream and pushes RTMP to `settings.srsUrl/<slot>`. When FFmpeg logging is enabled, `-loglevel warning` is prepended to the FFmpeg args and stderr is redirected to a per-slot log file (`logs/ffmpeg-<slot>.log`) via a file descriptor passed directly to `spawn` — no Node.js stream piping. `launchStream(s)` wraps both, sets the relay in the `relays` Map, persists state, and logs history. All FFmpeg exits are logged to the Activity Log (null = stopped, 0 = ended unexpectedly, non-zero = crashed). The `relays` Map holds `{ slot, name, url, logo, startedAt, pid, proc }` — `proc` is stripped when serialising to disk. `resolveLogoForUrl(url, provided)` is a shared helper that returns the provided logo or falls back to the M3U cache lookup.
-- **Auto-restart** — when FFmpeg exits unexpectedly (any exit where `relays.has(slot)` is still true, meaning `killRelay` was not called), the relay is automatically re-spawned after a 3-second delay. `code !== null` guards against treating a manual SIGKILL as an unexpected exit. The restarted relay gets a fresh `startedAt` timestamp and full exit/crash event coverage.
-- **Startup relay restoration** — `relays.json` is read at boot. For each persisted relay, `process.kill(pid, 0)` checks if the FFmpeg process is still alive. Alive PIDs are killed via `process.kill(pid, 'SIGTERM')` and immediately re-spawned via `spawnRelay` to obtain a fresh proc handle with full exit/crash event coverage. Dead PIDs are discarded. Because the old PID is killed via a raw OS signal (no proc handle), no exit event fires and the auto-restart logic is not triggered.
-- **Auto-Scheduler** — daily cron job (configurable time, Eastern timezone) that hits the ESPN scoreboard API, finds games matching a search string, searches the M3U cache for a matching channel, and auto-creates a one-time schedule. The ESPN UTC time is converted to Eastern Time via `America/New_York` (fully DST-aware) and used directly — M3U `eventTime` overrides are intentionally not used as they encode times in a fixed non-DST-aware offset. State persisted in `data/auto_scheduler.json`. Activity log includes M3U refresh events (manual and automatic) and relay error events.
+- **Relay engine** — `findFreeSlot(preferred)` picks the next available slot up to `settings.maxSlots`. `spawnRelay(slot, s)` spawns FFmpeg with `detached: true` + `proc.unref()` so the FFmpeg process survives NSSM stop/restart. `launchStream(s)` wraps both, sets the relay in the `relays` Map, persists state, and logs history. All FFmpeg exits are logged (null = stopped, 0 = ended unexpectedly, non-zero = crashed). The `relays` Map holds `{ slot, name, url, logo, startedAt, pid, proc }` — `proc` is stripped when serialising to disk. `resolveLogoForUrl(url, provided)` returns the provided logo or falls back to M3U cache lookup.
+- **Auto-restart** — when FFmpeg exits unexpectedly (any exit where `relays.has(slot)` is still true), the relay is re-spawned after a 3-second delay. `code !== null` guards against treating a manual SIGKILL as an unexpected exit.
+- **Startup relay restoration** — `relays.json` is read at boot. Alive PIDs are killed via `process.kill(pid, 'SIGTERM')` and immediately re-spawned via `spawnRelay`. Dead PIDs are discarded. Because the old PID is killed via raw OS signal (no proc handle), no exit event fires and auto-restart is not triggered.
 - **SSE** — `createSSEEndpoint(clientSet)` factory creates event-stream endpoints. `broadcastSSE(clientSet, data)` pushes to all connected clients. Two endpoints: `/api/events` (dashboard) and `/api/auto-scheduler/events` (activity log). The dashboard SSE emits event types: `relays`, `schedule`, `history`.
 - **Restart endpoint** — `POST /api/system/restart` calls `nssm restart StreamSched` via a detached `cmd.exe` process, so it only works when running as an NSSM service named `StreamSched`.
 
@@ -82,6 +87,7 @@ UI patterns:
 | `auto_scheduler.json` | Auto-scheduler config + activity log (capped at 100 entries) |
 | `m3u_cache.json` | Persisted M3U channel list |
 | `relays.json` | Persisted relay state — slot, name, url, logo, startedAt, pid (no proc) |
+| `sessions.json` | Express session store (managed by `FileStore` in `server.js`) |
 
 ### Key design notes
 
