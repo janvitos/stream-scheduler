@@ -414,7 +414,7 @@ async function loadHistory() {
 
 function makeHistoryItem(h) {
   const div = document.createElement('div');
-  div.className = h.url ? 'media-row ch-card' : 'media-row';
+  div.className = h.url ? 'media-row log-item ch-card' : 'media-row log-item';
   if (h.url) {
     div.dataset.histUrl = h.url;
     div.dataset.histName = h.scheduleName || 'Unknown';
@@ -738,7 +738,7 @@ function renderChannels(channels, count, total) {
   const frag = document.createDocumentFragment();
   channels.forEach(ch => {
     const div = document.createElement('div');
-    div.className = 'media-row ch-card';
+    div.className = 'media-row log-item ch-card';
     const { channel: chChannel, title: chTitle } = parseName(ch.name);
     div.innerHTML = `
       ${logoImg(ch.logo)}
@@ -1163,9 +1163,11 @@ function renderAsLog() {
   log.innerHTML = '<div class="item-list item-list--grid">' + asData.activityLog.map(e => {
     const icons = { success: '✅', info: 'ℹ️', warn: '⚠️', error: '❌' };
     const icon = icons[e.type] || 'ℹ️';
-    return `<div class="media-row">
+    const typeClass = e.type || 'info';
+    return `<div class="media-row log-item">
+      <div class="log-icon log-icon--${typeClass}">${icon}</div>
       <div class="item-info">
-        <div class="item-name">${icon} ${esc(e.message)}</div>
+        <div class="item-name">${esc(e.message)}</div>
         <div class="item-meta"><span class="item-tag tag-time">${fmtDt(e.timestamp)}</span></div>
       </div>
     </div>`;

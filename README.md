@@ -1,235 +1,163 @@
 # StreamSched
 
-> A self-hosted web app to schedule IPTV / stream URLs for relay via FFmpeg and SRS.
-
-StreamSched lets you schedule any stream URL — from an M3U playlist or Xtream Codes provider — to relay automatically via FFmpeg to an SRS (Simple Realtime Server) instance at a specific time, on a recurring schedule, or instantly on demand. It supports up to 5 simultaneous relay slots, in-browser HLS preview per stream, and an auto-scheduler that can pull live sports events from an API and schedule them automatically.
-
----
-
-## Features
-
-- **M3U & Xtream Codes** — fetch and search channels from any M3U URL or Xtream Codes provider
-- **One-time schedules** — relay a stream at a specific date and time, fires once then removes itself
-- **Recurring schedules** — schedule daily, weekly, or monthly recurrences via a simple time/day picker
-- **Multi-stream relay** — up to 5 simultaneous FFmpeg relay slots (`stream01`–`stream05`), configurable in Settings
-- **Preferred relay slot** — optionally pin a schedule or the auto-scheduler to a specific slot
-- **Relay slot picker** — when launching immediately with multiple slots available, a picker modal shows the state of each slot; with a single slot configured, the current stream is replaced automatically
-- **In-browser HLS preview** — watch any active relay directly in the dashboard via hls.js
-- **Auto-Scheduler** — automatically creates schedules from a sports API (ESPN) based on a search string; supports a default relay slot
-- **FFmpeg auto-restart** — if FFmpeg exits unexpectedly (any exit not triggered by the Stop button), the relay automatically re-spawns after a 3-second delay
-- **Stream survival** — FFmpeg relay processes are detached from Node.js and survive both a Node.js crash and a full NSSM service restart; live processes are re-spawned on boot for full crash detection
-- **Cross-platform FFmpeg** — uses `bin/ffmpeg` if present, otherwise falls back to `ffmpeg` on the system PATH; Windows uses `ffmpeg.exe` automatically
-- **Debug logging** — single toggle enabling both per-slot FFmpeg log files and server-side console output; configurable log directory and max file size
-- **Daily M3U refresh** — automatically re-fetch your channel list on a schedule
-- **Playback history** — log of every stream launched with timestamps and status
-- **Activity log** — dedicated page tracking auto-scheduler activity, M3U refreshes, relay errors, and auto-restart events (last 100 entries)
-- **Password protected** — login required, session-based auth
-- **LAN accessible** — binds to `0.0.0.0` so any device on your network can reach it
+<div align="center">
+  <img src="public/logo.svg" alt="StreamSched Logo" width="120" height="120">
+  <h3>A robust, self-hosted stream relay and scheduler for IPTV.</h3>
+  <p>
+    <img src="https://img.shields.io/badge/Node.js-18+-6fb43f?style=flat-square&logo=node.js" alt="Node.js">
+    <img src="https://img.shields.io/badge/Architecture-Modular-00e5a0?style=flat-square" alt="Modular Architecture">
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
+    <img src="https://img.shields.io/badge/UI-Vanilla-orange?style=flat-square" alt="Vanilla UI">
+  </p>
+</div>
 
 ---
 
-## Requirements
+**StreamSched** (stream-scheduler) is a high-performance, self-hosted web application designed to schedule and relay IPTV streams. It bridges any M3U or Xtream Codes provider to an [SRS (Simple Realtime Server)](https://ossrs.net/) instance via FFmpeg, providing a resilient, multi-slot streaming architecture with a premium user experience.
 
-- [Node.js](https://nodejs.org/) v18 or later
-- [FFmpeg](https://ffmpeg.org/) — place in `bin/` or install system-wide
-- [SRS (Simple Realtime Server)](https://ossrs.net/) — receives RTMP from FFmpeg and serves HLS
+## ✨ Key Features
+
+-   **🏗️ Modular Architecture** — Newly refactored logic split into dedicated service engines (`relay-engine`, `m3u-parser`, `auto-scheduler`) for enhanced stability and maintainability.
+-   **🛡️ Resilient Relays** — FFmpeg processes are spawned **detached** from the Node.js parent. They survive server crashes and full service restarts; the engine automatically re-connects to existing processes on boot for zero-gap monitoring.
+-   **⚡ High-Performance Parsing** — M3U handling has been optimized with stream-based I/O and non-blocking JSON persistence, drastically reducing memory overhead for large playlists.
+-   **📅 Intelligent Auto-Scheduler** — Automatically fetches and schedules sports events via the ESPN API. Features full time-zone awareness (DST-safe) and smart channel matching.
+-   **🔄 Auto-Recovery** — Built-in watchdog that detects unexpected FFmpeg exits or stream stalls and automatically re-spawns the relay after a 3-second buffer.
+-   **🎨 Premium UI / UX** — A modern, glassmorphic "framed" interface built with vanilla JS/CSS. Features Inter typography, real-time SSE updates, and a responsive mobile-first layout.
+-   **📡 Stream Monitoring** — Integrated Activity Log with real-time SSE event streaming, detailed per-slot FFmpeg logging (configurable), and in-browser HLS previews.
+-   **🔒 Secured by Design** — Session-based authentication with Bcrypt password hashing and persistent data storage in standard JSON formats.
 
 ---
 
-## Installation
+## 🛠️ Requirements
 
-### 1. Install dependencies
+-   **Node.js v18** or later.
+-   **FFmpeg** — Local binary in `bin/` or installed on your system PATH.
+-   **SRS (Simple Realtime Server)** — To receive RTMP and serve HLS/WebRTC.
 
-Open a terminal in the `StreamSched` folder:
+---
 
+## 🚀 Quick Start
+
+### 1. Installation
+Clone the repository and install the lightweight dependencies:
 ```bash
 npm install
 ```
 
-### 2. Place FFmpeg
+### 2. FFmpeg Setup
+Place your FFmpeg binary in a folder named `bin/` at the project root, or ensure `ffmpeg` is available in your system environment variables. StreamSched automatically detects your OS and resolves the correct path.
 
-StreamSched looks for FFmpeg in the following order:
-
-1. `bin/ffmpeg.exe` (Windows) or `bin/ffmpeg` (Linux/Mac) — local binary inside the app folder
-2. `ffmpeg` on the system PATH — if no local binary is found
-
-**Option A — Local binary (all platforms):**
-```
-StreamSched/
-  bin/
-    ffmpeg.exe   ← Windows
-    ffmpeg       ← Linux / Mac
-```
-
-**Option B — System-wide (Linux/Mac):**
-```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt install ffmpeg
-```
-
-### 3. Run setup (first time only)
-
+### 3. Configuration
+Run the setup utility to initialize your credentials and ports:
 ```bash
 node setup.js
 ```
 
-You will be prompted to enter:
-- **Port** — e.g. `3000`
-- **Username** — e.g. `admin`
-- **Password** — minimum 6 characters
-
-This creates `data/config.json` with your hashed credentials.
-
-### 4. Configure SRS
-
-StreamSched pushes RTMP to SRS and reads HLS back. Two URLs need to be set in **Settings → Stream Relay**:
-
-| Setting | Description | Example |
-|---------|-------------|---------|
-| **SRS RTMP URL** | RTMP ingest endpoint used by FFmpeg (LAN IP) | `rtmp://192.168.1.125/live` |
-| **SRS Watch URL** | HTTPS base URL for HLS playback (your domain/proxy) | `https://stream.example.com/live` |
-
-HLS for each slot is served at `{SRS Watch URL}/{slot}.m3u8` — e.g. `https://stream.example.com/live/stream01.m3u8`.
-
-**Recommended `srs.conf`:**
-
-```nginx
-listen              1935;
-max_connections     1000;
-srs_log_tank        console;
-
-http_server {
-    enabled         on;
-    listen          8080;
-    dir             ./objs/nginx/html;
-}
-
-vhost __defaultVhost__ {
-    publish {
-        firstpkt_timeout    20000;  # ms — wait for first packet
-        normal_timeout      30000;  # ms — tolerance for gaps in IPTV streams (default 5000 is too aggressive)
-    }
-
-    hls {
-        enabled         on;
-        hls_path        ./objs/nginx/html;
-        hls_fragment    1;
-        hls_window      6;          # seconds of HLS buffer — 6 is a good balance for live sports
-        hls_dispose     10;
-    }
-}
-```
-
-The `normal_timeout` increase is important — IPTV streams can have brief gaps that the default 5-second timeout treats as a dead connection, killing the relay. The `hls_window 6` gives the browser player enough buffer to absorb minor hiccups without stalling.
-
-### 5. Start the server
-
+### 4. Service Launch
+Start the server:
 ```bash
 node server.js
 ```
-
-Open your browser to `http://localhost:3000` (or your chosen port).
-
-To access from another device on your LAN, use your machine's local IP:
-```
-http://192.168.1.x:3000
-```
+The application will be accessible at `http://localhost:3000` (or your configured port).
 
 ---
 
-## Usage
+## 🏗️ Architecture & Engine
+
+StreamSched is built on a **modular monolithic** pattern. While it remains a single-file server deployment for simplicity, the core logic is divided into specialized engines:
+
+### Relay Engine (`src/relay-engine.js`)
+Manages the lifecycle of FFmpeg processes. It supports up to 5 simultaneous relay slots (`stream01`–`stream05`).
+-   **Detached Spawning**: Uses `spawn` with `detached: true` to decouple FFmpeg from the Node.js event loop.
+-   **PID Persistence**: PIDs are saved to disk, allowing the server to re-acquire control of running streams after a restart.
+-   **Force-Replacement**: Intelligently kills existing relays when a prioritized or forced stream is launched on an occupied slot.
+
+### M3U Parser (`src/m3u-parser.js`)
+An optimized parser designed for speed and low memory usage.
+-   **Streamed Persistence**: Uses `fs.createWriteStream` to flush large channel caches without blocking.
+-   **Dual-Layer Cache**: Keeps an in-memory searchable index while persisting the raw data to JSON for instant startup loads.
+
+### Auto-Scheduler (`src/auto-scheduler.js`)
+The "brain" of the application for automated event coverage.
+-   **ESPN Integration**: Queries collegiate and professional sports APIs daily.
+-   **Fuzzy Matching**: Matches API event names against your M3U channel list to find the best broadcast source.
+
+---
+
+## 📖 Detailed Usage Documentation
 
 ### Loading Channels (Settings → M3U / Xtream Source)
 
 1. Paste your M3U or Xtream Codes URL — supported formats:
    - Direct `.m3u` / `.m3u8` file URL
    - Xtream Codes: `http://server/get.php?username=X&password=Y&type=m3u_plus`
-2. Click **Get** to fetch and cache the channel list
-3. Optionally enable **Auto-refresh** to re-fetch daily at a time of your choosing
+2. Click **Get** to fetch and cache the channel list.
+3. Optionally enable **Auto-refresh** to re-fetch daily at a time of your choosing.
 
-### Searching & Scheduling Channels (Dashboard)
+### Searching & Scheduling (Dashboard)
 
-1. Type in the **Channel Search** box to filter your channel list
+1. Type in the **Channel Search** box to filter your channel list.
 2. Click or tap any channel to open the scheduling modal:
-   - **Now** — relays immediately; see slot selection behaviour below
-   - **Once** — pick a date and time
-   - **Recurring** — choose Daily / Weekly / Monthly, set a time, and (for weekly/monthly) pick a day
-3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto; hidden when Max Streams is set to 1)
-4. After clicking **Add to Schedules**, the search input and results are cleared automatically
+   - **Now** — relays immediately; see slot selection behavior below.
+   - **Once** — pick a specific date and time.
+   - **Recurring** — choose Daily / Weekly / Monthly, set a time, and (for weekly/monthly) pick a day.
+3. Optionally select a **Relay Slot** to pin the stream to a specific slot (defaults to Auto; hidden when Max Streams is set to 1).
+4. After clicking **Add to Schedules**, the search input and results are cleared automatically.
 
 ### Active Relays (Dashboard)
 
-- Each active relay appears as a card showing channel logo, stream name, start time, and slot (slot hidden when Max Streams is 1)
-- **👁 Preview** — shows a live HLS video preview directly in the dashboard
-- **■ Stop** — terminates the FFmpeg relay for that slot
-- If FFmpeg exits unexpectedly, the relay auto-restarts after 3 seconds and is logged to the Activity Log
+- Each active relay appears as a card showing channel logo, stream name, start time, and slot (slot hidden when Max Streams is 1).
+- **👁 Preview** — shows a live HLS video preview directly in the dashboard via hls.js.
+- **■ Stop** — terminates the FFmpeg relay for that slot.
+- If FFmpeg exits unexpectedly, the relay auto-restarts after 3 seconds and is logged to the Activity Log.
 
 ### Managing Schedules (Dashboard)
 
-- **Run Now** — trigger any schedule immediately
-- **Edit** — update name, time, relay slot, or recurrence
-- **Delete** — remove a schedule immediately (no confirmation)
-- Recurring schedules show a frequency badge (`DAILY` / `WEEKLY` / `MONTHLY`) and a compact time tag (e.g. `8:00 PM`, `Mon · 8:00 PM`, `1st · 8:00 PM`)
-- One-time schedules remove themselves after firing
-- Schedules are listed newest-first; slot badge shown when Max Streams > 1 (displays "Auto" if no preferred slot is set)
+- **Run Now** — trigger any schedule immediately.
+- **Edit** — update name, time, relay slot, or recurrence.
+- **Delete** — remove a schedule immediately (no confirmation).
+- Recurring schedules show a frequency badge (`DAILY` / `WEEKLY` / `MONTHLY`) and a compact time tag (e.g. `8:00 PM`, `Mon · 8:00 PM`, `1st · 8:00 PM`).
+- One-time schedules remove themselves after firing.
 
-### Activity Log (dedicated page)
+### Activity Log (Dedicated Page)
 
-- Shows the last 100 auto-scheduler events, M3U refresh events, relay errors, and auto-restart events
-- Updates in real time via SSE
+- Shows the last 100 auto-scheduler events, M3U refresh events, relay errors, and auto-restart events.
+- Updates in real time via **Server-Sent Events (SSE)**.
+
+---
+
+## ⚙️ Advanced Configuration
 
 ### Auto-Scheduler (Settings)
 
 The Auto-Scheduler queries a sports API on a daily schedule and automatically creates stream entries when a match is found.
 
-1. Set a **Search String** (e.g. `Texas Tech`) to match against API results
-2. Set an **API Endpoint** — defaults to the ESPN college baseball scoreboard
-3. Set a **Check Time** — the time of day the scheduler will run (Eastern timezone)
-4. Set a **Default Relay Slot** — optionally pin auto-created schedules to a specific relay slot
-5. Optionally enable **Refresh M3U before running** to ensure channels are up to date
-6. Toggle **Auto-Scheduler** on to activate
+1. Set a **Search String** (e.g. `Texas Tech`) to match against API results.
+2. Set an **API Endpoint** — defaults to the ESPN college baseball scoreboard.
+3. Set a **Check Time** — the time of day the scheduler will run (Eastern timezone).
+4. Set a **Default Relay Slot** — optionally pin auto-created schedules to a specific relay slot.
+5. Optionally enable **Refresh M3U before running** to ensure channels are up to date.
+6. Toggle **Auto-Scheduler** on to activate.
 
-Matched events are scheduled 10 minutes before their ESPN-listed start time. Game times are sourced exclusively from the ESPN API (UTC, converted to Eastern Time via `America/New_York`) to ensure correct DST handling year-round.
+Matched events are scheduled 10 minutes before their listed start time. Game times are sourced exclusively from the ESPN API (UTC, converted to Eastern Time via `America/New_York`) to ensure correct DST handling year-round.
+
+### Relay Slots
+
+StreamSched supports up to 5 simultaneous FFmpeg relay slots. Configure how many are available in **Settings → Max Streams** (1–5, default 2). Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS.
+
+#### Slot selection behavior:
+- **Max Streams = 1** — `stream01` is always used; if occupied, the current stream is stopped and replaced automatically.
+- **Max Streams > 1** — a slot picker appears listing Auto and each individual slot with its current state (Free or the name of the stream playing). Choosing an occupied slot stops it first.
 
 ### Logging (Settings)
 
-- **Debug Logging** — a single toggle that controls all optional logging. When enabled: each relay slot writes FFmpeg warnings and errors to `logs/ffmpeg-<slot>.log` inside the StreamSched folder, and server-side `console.log` output is active. Configure the log directory and **FFmpeg Log Max File Size** (1–100 MB; file is truncated at relay start if the limit is exceeded). `console.error` is always active regardless of this setting. Defaults to off.
-
-### Recent Activity (Dashboard)
-
-- Shows the last 10 streams launched in a 2-column grid — click or tap any entry to replay it instantly using the same slot selection behaviour described below
+- **Debug Logging** — A single toggle that controls all optional logging.
+- **FFmpeg Logs**: Writes warnings/errors to `logs/ffmpeg-<slot>.log`.
+- **Log Max File Size**: Truncates files if they exceed your set limit (1–100 MB).
 
 ---
 
-## Relay Slots
-
-StreamSched supports up to 5 simultaneous FFmpeg relay slots. Configure how many are available in **Settings → Max Streams** (1–5, default 2).
-
-Each slot (`stream01`–`stream05`) maps to an RTMP stream pushed to SRS.
-
-### Slot selection when launching immediately
-
-Launching immediately (Recent Activity card, Schedule "Run Now", or "Now" in the schedule/channel modal) uses one of two paths depending on **Max Streams**:
-
-- **Max Streams = 1** — stream01 is always used; if it is already occupied the current stream is stopped and replaced automatically.
-- **Max Streams > 1** — a slot picker appears listing Auto and each individual slot with its current state (Free or the name of the stream playing). Clicking a row launches immediately. Choosing an occupied slot stops it first. Auto is disabled when all slots are full, but individual slots remain selectable for forced replacement.
-
-### Scheduled streams
-
-Scheduled streams use the optional **Preferred Slot** set on the schedule:
-
-1. If a preferred slot is set and free, it is used
-2. Otherwise the first available slot is auto-assigned
-3. If all slots are full, the launch is rejected and logged to the Activity Log
-
-FFmpeg processes are spawned detached from Node.js, so they are not killed when the service stops or restarts. If the server restarts, any still-running FFmpeg processes are killed and immediately re-spawned — this causes a brief stream interruption but ensures full crash detection (exit codes, activity log) going forward. If FFmpeg exits unexpectedly at any time, it is automatically re-spawned after a 3-second delay.
-
----
-
-## Autostart on Windows (optional)
+## 🖥️ Autostart on Windows (Optional)
 
 To run StreamSched as a background Windows service that starts with the system, use [NSSM](https://nssm.cc/):
 
@@ -238,37 +166,36 @@ nssm install StreamSched node server.js
 ```
 
 Then in the NSSM GUI:
-- Set **Startup directory** to the `StreamSched` folder
-
-The server will start silently at boot and restart automatically on failure.
+- Set **Startup directory** to the `StreamSched` folder.
+- Ensure the service name is `StreamSched` (this is required for the application's internal restart feature).
 
 ---
 
-## Data Files
+## 📂 Data Storage
 
-All data is stored in the `data/` directory:
+All data is stored in the `data/` directory for easy portability:
 
 | File                  | Contents                                          |
 |-----------------------|---------------------------------------------------|
-| `config.json`         | Port, username, hashed password                   |
-| `schedules.json`      | All saved schedules (includes `preferredSlot`, `frequency`, `recurTime`, `recurDay`) |
+| `config.json`         | Port, username, hashed password, session secret   |
+| `schedules.json`      | All saved schedules and recurrence rules          |
 | `history.json`        | Playback log (last 10 entries)                    |
-| `relays.json`         | Active relay state — slot, name, pid (persisted across restarts) |
-| `settings.json`       | SRS URLs, max slots, M3U refresh settings, debug logging config (`debugLogging`, `ffmpegLogPath`, `ffmpegLogMaxSizeMb`) |
-| `auto_scheduler.json` | Auto-scheduler config, default slot, activity log (last 100 entries) |
+| `settings.json`       | SRS URLs, max slots, M3U refresh settings         |
+| `auto_scheduler.json` | Auto-scheduler config and truncated activity log  |
 | `m3u_cache.json`      | Cached channel list from last M3U fetch           |
+| `relays.json`         | Persisted relay state (PIDs, start times, logos)  |
 
 ---
 
-## Security Notes
+## 🔒 Security Notes
 
-- The app binds to `0.0.0.0` and is accessible to all devices on your LAN
-- Use a strong password, especially if your LAN is shared
-- For internet access, place behind a reverse proxy (nginx, Caddy) with HTTPS
-- Passwords are stored hashed — never in plain text
+- The app binds to `0.0.0.0` and is accessible to all devices on your LAN.
+- Use a strong password, especially if your LAN is shared.
+- For internet access, place behind a reverse proxy (Nginx, Caddy) with HTTPS.
+- Passwords are stored securely using **Bcrypt** hashing.
 
 ---
 
-## License
+## 📜 License
 
-MIT
+Published under the **MIT License**. Created with a focus on simplicity, reliability, and performance.

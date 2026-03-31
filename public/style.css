@@ -343,6 +343,16 @@ textarea { resize: vertical; min-height: 70px; }
 .item-logo-placeholder { width: 36px; height: 36px; border-radius: 6px; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
 .item-logo-placeholder.hidden { display: none; }
 
+.log-icon {
+  width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.log-icon--info    { background: rgba(0, 119, 255, 0.15); color: var(--accent2); }
+.log-icon--success { background: rgba(0, 229, 160, 0.15); color: var(--accent); }
+.log-icon--warn    { background: rgba(255, 184, 48, 0.15); color: var(--warn); }
+.log-icon--error   { background: rgba(255, 76, 106, 0.15); color: var(--danger); }
+
 
 /* ── History ── */
 .hist-dot     { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -562,11 +572,26 @@ textarea { resize: vertical; min-height: 70px; }
     grid-template-columns: 36px 1fr;
     column-gap: 14px;
     row-gap: 8px;
-    align-items: start;
+    align-items: center;
   }
   .media-row > .item-logo,
+  .media-row > .item-status-icon,
+  .media-row > .log-icon,
   .media-row > .item-logo-placeholder { grid-row: span 2; align-self: center; }
-  .sched-actions { grid-column: 2; }
+  .sched-actions, .np-header-actions { grid-column: 2; }
+
+  /* Ensure items without actions (Activity Log, Recent activity, Search results)
+     remain centered in a single row without spanning multiple rows. */
+  .media-row.log-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+  }
+  .media-row.log-item > .item-logo,
+  .media-row.log-item > .log-icon,
+  .media-row.log-item > .item-logo-placeholder { grid-row: 1; align-self: center; }
+
 
 }
 
