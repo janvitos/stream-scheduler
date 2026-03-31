@@ -705,6 +705,7 @@ const doSearch = debounce(async () => {
 
 document.getElementById('m3u-search').addEventListener('input', () => {
   const val = document.getElementById('m3u-search').value;
+  document.getElementById('m3u-search-clear').classList.toggle('show', val.length > 0);
   if (val.length < 2) {
     doSearch.cancel();
     document.getElementById('m3u-results-wrap').style.display = 'none';
@@ -716,24 +717,14 @@ document.getElementById('m3u-search').addEventListener('input', () => {
 
 function clearChannelSearch() {
   document.getElementById('m3u-search').value = '';
+  document.getElementById('m3u-search-clear').classList.remove('show');
   document.getElementById('m3u-results-wrap').style.display = 'none';
   document.getElementById('m3u-search-help').textContent = '';
   document.getElementById('channel-list').innerHTML = '';
 }
 
-// Clear search when clicking outside the card
-document.addEventListener('click', (e) => {
-  const card = document.getElementById('search-channels-card');
-  const input = document.getElementById('m3u-search');
-  if (!card || !input || !input.value.trim()) return;
+document.getElementById('m3u-search-clear').addEventListener('click', clearChannelSearch);
 
-  const isInsideCard = card.contains(e.target);
-  const isInsideModal = !!e.target.closest('.modal-overlay') || !!e.target.closest('.modal');
-
-  if (!isInsideCard && !isInsideModal) {
-    clearChannelSearch();
-  }
-});
 
 function renderChannels(channels, count, total) {
   const card = document.getElementById('m3u-results-wrap');

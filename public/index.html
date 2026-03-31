@@ -58,7 +58,10 @@
       <div class="card" id="search-channels-card">
         <div class="card-header"><div class="card-title">🔍 Search Channels</div></div>
         <div class="flex gap-8">
-          <input type="text" id="m3u-search" placeholder="Channel name…" class="flex-1" disabled/>
+          <div class="input-group flex-1">
+            <input type="text" id="m3u-search" placeholder="Channel name…" disabled/>
+            <button type="button" class="btn-clear" id="m3u-search-clear" title="Clear Search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+          </div>
         </div>
         <div class="help mt-8" id="m3u-search-help" style="margin-bottom:8px">Download or load a cached M3U file first to enable search.</div>
         <div id="m3u-results-wrap" style="display:none">
