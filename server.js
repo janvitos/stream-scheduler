@@ -615,14 +615,12 @@ app.post('/api/auto-scheduler/disable', (req, res) => {
   res.json({ ok: true, enabled: false });
 });
 
-app.post('/api/auto-scheduler/run', async (req, res) => {
-  try {
-    await runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U });
-    res.json({ ok: true });
-  } catch (e) {
-    logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message);
-    res.status(500).json({ error: e.message });
-  }
+app.post('/api/auto-scheduler/run', (req, res) => {
+  res.json({ ok: true, async: true });
+  let runFailed = false;
+  runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U })
+    .catch(e => { runFailed = true; logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message); })
+    .finally(() => broadcastSSE(autoSchedSSEClients, { type: 'run-complete', ok: !runFailed }));
 });
 
 // Catch-all: serve index.html for any unmatched route (enables History API navigation)

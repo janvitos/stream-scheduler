@@ -71,6 +71,8 @@ const api = async (method, path, body) => {
     body: body ? JSON.stringify(body) : undefined
   });
   if (r.status === 401) { location.href = '/login'; throw new Error('Unauthorized'); }
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) throw new Error(`Server error (${r.status})`);
   return r.json();
 };
 const GET    = p     => api('GET',    p);
@@ -1212,7 +1214,12 @@ const connectDashboardSSE = makeSSE('/api/events', ({ type, relays }) => {
   if (type === 'relays')   { relayData = relays || []; renderRelays(relayData); }
 });
 
+let asRunCompleteCallback = null;
 const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
+  if (entry.type === 'run-complete') {
+    if (asRunCompleteCallback) { asRunCompleteCallback(entry.ok); asRunCompleteCallback = null; }
+    return;
+  }
   asData.activityLog = asData.activityLog || [];
   asData.activityLog.unshift(entry);
   if (asData.activityLog.length > 100) asData.activityLog.length = 100;
@@ -1274,15 +1281,15 @@ document.getElementById('as-run-btn').addEventListener('click', async () => {
   const btn = document.getElementById('as-run-btn');
   btn.disabled = true;
   btn.classList.add('btn-loading');
+  const stopLoader = () => { btn.disabled = false; btn.classList.remove('btn-loading'); };
   try {
     const r = await POST('/api/auto-scheduler/run');
-    if (r.error) throw new Error(r.error);
-    toast('Auto-Scheduler run completed!');
+    if (r.error) { stopLoader(); throw new Error(r.error); }
+    toast('Auto-Scheduler started — this may take a moment…');
+    asRunCompleteCallback = ok => { stopLoader(); toast(ok ? 'Auto-Scheduler run completed!' : 'Auto-Scheduler run failed', ok ? 'ok' : 'error'); };
   } catch (e) {
+    stopLoader();
     toast(e.message || 'Auto-Scheduler run failed', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove('btn-loading');
   }
 });
 
