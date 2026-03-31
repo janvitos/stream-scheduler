@@ -110,11 +110,26 @@ if (autoScheduler.activityLog.length > 100) {
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
+class FileStore extends session.Store {
+  constructor(options = {}) {
+    super(options);
+    this.path = options.path || path.join(DATA_DIR, 'sessions.json');
+    try { this.sessions = JSON.parse(fs.readFileSync(this.path)); }
+    catch (e) { this.sessions = {}; }
+  }
+  saveStore() { fs.writeFileSync(this.path, JSON.stringify(this.sessions)); }
+  get(sid, cb) { cb(null, this.sessions[sid] || null); }
+  set(sid, sess, cb) { this.sessions[sid] = sess; this.saveStore(); if(cb) cb(null); }
+  destroy(sid, cb) { delete this.sessions[sid]; this.saveStore(); if(cb) cb(null); }
+  touch(sid, sess, cb) { this.sessions[sid] = sess; this.saveStore(); if(cb) cb(null); }
+}
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
+  store:             new FileStore(),
   secret:            config.sessionSecret || 'change-me',
   resave:            false,
   saveUninitialized: false,
@@ -132,6 +147,9 @@ const requireAuth = (req, res, next) => {
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 
 // ── System ────────────────────────────────────────────────────────────────────
+const SERVER_BOOT_ID = Date.now().toString();
+app.get('/api/ping', (req, res) => res.json({ ok: true, bootId: SERVER_BOOT_ID }));
+
 app.post('/api/system/restart', (req, res) => {
   res.json({ ok: true });
   // Use a detached cmd process with a delay so it survives Node being killed

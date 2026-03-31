@@ -876,14 +876,14 @@ document.getElementById('save-pw-btn').addEventListener('click', async () => {
 ═══════════════════════════════════════════ */
 function showModal(id) { document.getElementById(id).classList.add('show'); }
 function hideModal(id) { document.getElementById(id).classList.remove('show'); }
-document.querySelectorAll('.modal-overlay').forEach(o => {
+document.querySelectorAll('.modal-overlay:not(#restart-modal)').forEach(o => {
   let downOnOverlay = false;
   o.addEventListener('mousedown', e => { downOnOverlay = e.target === o; });
   o.addEventListener('mouseup',   e => { if (downOnOverlay && e.target === o) o.classList.remove('show'); });
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  const open = document.querySelector('.modal-overlay.show');
+  const open = document.querySelector('.modal-overlay.show:not(#restart-modal)');
   if (open) open.classList.remove('show');
 });
 
@@ -1053,16 +1053,58 @@ async function stopRelay(slot) {
 }
 
 document.getElementById('restartBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('restartBtn');
-  btn.disabled = true;
-  btn.textContent = '↺  Restarting…';
+  const spinner     = document.getElementById('restart-spinner');
+  const successIcon = document.getElementById('restart-success-icon');
+  const modalText   = document.getElementById('restart-text');
+  
+  showModal('restart-modal');
+  spinner.style.display = 'inline-block';
+  successIcon.style.display = 'none';
+  modalText.textContent = 'Service restarting...';
+
+  let currentBootId = null;
+  try {
+    const initRes = await fetch('/api/ping?_=' + Date.now(), { cache: 'no-store' });
+    if (initRes.ok) {
+      const data = await initRes.json();
+      currentBootId = data.bootId;
+    }
+  } catch(e) {}
+
   try {
     await POST('/api/system/restart');
-    toast('Service is restarting…', 'warn');
   } catch(e) {
     toast('Restart failed: ' + e.message, 'error');
+    hideModal('restart-modal');
+    return;
   }
-  setTimeout(() => { btn.disabled = false; btn.textContent = '↺  Restart Service'; }, 5000);
+
+  const checkPing = async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch('/api/ping?_=' + Date.now(), { cache: 'no-store', signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (currentBootId && data.bootId === currentBootId) {
+          setTimeout(checkPing, 1000);
+        } else {
+          spinner.style.display = 'none';
+          successIcon.style.display = 'inline-block';
+          modalText.textContent = 'Service was restarted successfully!';
+          setTimeout(() => location.reload(), 1500);
+        }
+      } else {
+        setTimeout(checkPing, 1000);
+      }
+    } catch (err) {
+      setTimeout(checkPing, 1000);
+    }
+  };
+  
+  setTimeout(checkPing, 1000);
 });
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
