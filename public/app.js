@@ -721,6 +721,20 @@ function clearChannelSearch() {
   document.getElementById('channel-list').innerHTML = '';
 }
 
+// Clear search when clicking outside the card
+document.addEventListener('click', (e) => {
+  const card = document.getElementById('search-channels-card');
+  const input = document.getElementById('m3u-search');
+  if (!card || !input || !input.value.trim()) return;
+
+  const isInsideCard = card.contains(e.target);
+  const isInsideModal = !!e.target.closest('.modal-overlay') || !!e.target.closest('.modal');
+
+  if (!isInsideCard && !isInsideModal) {
+    clearChannelSearch();
+  }
+});
+
 function renderChannels(channels, count, total) {
   const card = document.getElementById('m3u-results-wrap');
   const list = document.getElementById('channel-list');
@@ -809,7 +823,6 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   if (body.scheduleType === 'now') {
     const logo = document.getElementById('am-logo').value || null;
     hideModal('add-modal');
-    clearChannelSearch();
     const max = parseInt(document.getElementById('max-slots')?.value || '2');
     if (max === 1) {
       const r = await POST('/api/play-now', { name: body.name, url, logo, preferredSlot: 'stream01', force: true });
@@ -822,7 +835,6 @@ document.getElementById('add-modal-save').addEventListener('click', async () => 
   await POST('/api/schedules', body);
   toast('Added to schedules!');
   hideModal('add-modal');
-  clearChannelSearch();
   loadSchedules();
 });
 
