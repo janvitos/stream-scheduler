@@ -75,6 +75,20 @@ function serverLog(...args) {
 // ─── Relay state ──────────────────────────────────────────────────────────────
 // In-memory map: slot → { slot, name, url, logo, startedAt, pid, proc }
 const relays = new Map();
+const createRelayEngine = require('./src/relay-engine');
+const { killRelay, launchStream, spawnRelay } = createRelayEngine({
+  getSettings: () => settings,
+  ALL_SLOTS,
+  relays,
+  FFMPEG_PATH,
+  saveRelays: () => saveRelays(),
+  logAutoActivity,
+  getHistory: () => history,
+  saveHistory: () => saveHistory(),
+  schedules,
+  saveSchedules: () => saveSchedules(),
+  serverLog
+});
 
 const getRelayStates = () =>
   [...relays.values()].map(({ proc, ...r }) => r); // strip proc — not serialisable
@@ -295,6 +309,19 @@ const M3U_CACHE_PATH = path.join(DATA_DIR, 'm3u_cache.json');
 
 let m3uMemCache = null; // { channels, fetchedAt, sourceUrl, byteSize }
 
+async function saveM3UCacheStreamed() {
+  if (!m3uMemCache) return;
+  const ws = fs.createWriteStream(M3U_CACHE_PATH);
+  ws.write(`{"fetchedAt":${m3uMemCache.fetchedAt},"sourceUrl":${JSON.stringify(m3uMemCache.sourceUrl)},"byteSize":${m3uMemCache.byteSize||0},"channels":[\n`);
+  for (let i = 0; i < m3uMemCache.channels.length; i++) {
+    const isLast = i === m3uMemCache.channels.length - 1;
+    const chunk = JSON.stringify(m3uMemCache.channels[i]) + (isLast ? '\n' : ',\n');
+    if (!ws.write(chunk)) await new Promise(r => ws.once('drain', r));
+  }
+  ws.end(']}');
+  return new Promise((resolve, reject) => { ws.once('finish', resolve); ws.once('error', reject); });
+}
+
 try {
   if (fs.existsSync(M3U_CACHE_PATH)) {
     const raw = fs.readFileSync(M3U_CACHE_PATH, 'utf8');
@@ -365,7 +392,7 @@ app.get('/api/m3u/download', async (req, res) => {
         send({ type: 'parsing' });
         const channels = parseM3U(raw);
         m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: received };
-        fs.promises.writeFile(M3U_CACHE_PATH, JSON.stringify(m3uMemCache))
+        saveM3UCacheStreamed()
           .catch(err => console.warn('Could not persist M3U cache:', err.message));
         logAutoActivity('info', `M3U refreshed manually — ${channels.length} channels loaded`);
         send({ type: 'done', count: channels.length });
@@ -398,50 +425,7 @@ app.post('/api/m3u/search', (req, res) => {
 });
 
 // ─── M3U Parser ───────────────────────────────────────────────────────────────
-function parseM3U(text) {
-  const channels = [];
-  let meta = null;
-  let start = 0;
-
-  while (start < text.length) {
-    let end = text.indexOf('\n', start);
-    if (end === -1) end = text.length;
-    const line = text.slice(start, end).trim();
-    start = end + 1;
-    if (!line) continue;
-
-    if (line.startsWith('#EXTINF:')) {
-      meta = { name: '', logo: '', group: '', id: '', eventTime: null };
-
-      const nameMatch  = line.match(/,(.+)$/);
-      const logoMatch  = line.match(/tvg-logo="([^"]*)"/);
-      const groupMatch = line.match(/group-title="([^"]*)"/);
-      const idMatch    = line.match(/tvg-id="([^"]*)"/);
-      const tvgName    = line.match(/tvg-name="([^"]*)"/);
-
-      if (logoMatch)  meta.logo  = logoMatch[1];
-      if (groupMatch) meta.group = groupMatch[1];
-      if (idMatch)    meta.id    = idMatch[1];
-
-      // Use tvg-name as display name when available — it has the full "Channel | Event" string.
-      // Extract ISO date before stripping it, store in eventTime for the frontend.
-      const rawName = (tvgName && tvgName[1]) ? tvgName[1] : (nameMatch ? nameMatch[1].trim() : '');
-      const isoMatch = rawName.match(/\((\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2})?\)\s*$/);
-      if (isoMatch) {
-        const year = parseInt(isoMatch[1].slice(0, 4), 10);
-        if (year >= 2020 && year <= 2097) meta.eventTime = isoMatch[1] + 'T' + isoMatch[2];
-      }
-      meta.name = rawName.replace(/\s*\(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?\)\s*$/, '').replace(/\s*\|\s*$/, '').trim();
-      if (!meta.name && nameMatch) meta.name = nameMatch[1].trim();
-
-    } else if (!line.startsWith('#') && meta !== null) {
-      if (!meta.name) meta.name = line;
-      channels.push({ ...meta, url: line, searchName: (meta.name || '').toLowerCase() });
-      meta = null;
-    }
-  }
-  return channels;
-}
+const parseM3U = require('./src/m3u-parser');
 
 // ─── Scheduler engine ─────────────────────────────────────────────────────────
 const cronJobs = new Map();
@@ -480,158 +464,9 @@ function unregisterSchedule(id) {
   cronJobs.delete(id);
 }
 
-// ─── Relay engine ─────────────────────────────────────────────────────────────
-
-function findFreeSlot(preferred) {
-  const max = Math.max(1, Math.min(5, settings.maxSlots || 2));
-  // Try preferred slot first if valid and free
-  if (preferred && ALL_SLOTS.includes(preferred) && ALL_SLOTS.indexOf(preferred) < max && !relays.has(preferred)) {
-    return preferred;
-  }
-  // Fall back to first available slot
-  for (let i = 0; i < max; i++) {
-    if (!relays.has(ALL_SLOTS[i])) return ALL_SLOTS[i];
-  }
-  return null;
-}
-
-function spawnRelay(slot, s) {
-  const outputUrl = `${settings.srsUrl.replace(/\/$/, '')}/${slot}`;
-  const args = [
-    ...(settings.debugLogging ? ['-loglevel', 'warning'] : []),
-    '-re',
-    '-fflags', '+genpts+discardcorrupt',
-    '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-    '-rw_timeout', '5000000',
-    '-i', s.url,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-crf', '23',
-    '-g', '60',
-    '-c:a', 'aac', '-b:a', '128k',
-    '-f', 'flv', '-flvflags', 'no_duration_filesize',
-    outputUrl
-  ];
-
-  let stderrTarget = 'ignore';
-  if (settings.debugLogging) {
-    try {
-      const logDir  = settings.ffmpegLogPath || path.join(__dirname, 'logs');
-      const maxBytes = (settings.ffmpegLogMaxSizeMb || 10) * 1024 * 1024;
-      fs.mkdirSync(logDir, { recursive: true });
-      const logFile = path.join(logDir, `ffmpeg-${slot}.log`);
-      try { if (fs.statSync(logFile).size >= maxBytes) fs.writeFileSync(logFile, ''); } catch {}
-      stderrTarget = fs.openSync(logFile, 'a');
-    } catch (err) {
-      logAutoActivity('warn', `Could not open FFmpeg log for ${slot}: ${err.message}`);
-    }
-  }
-
-  let proc;
-  try {
-    proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', stderrTarget], detached: true });
-    proc.unref();
-  } catch (e) {
-    if (typeof stderrTarget === 'number') try { fs.closeSync(stderrTarget); } catch {}
-    console.error(`[Relay] Failed to spawn FFmpeg for ${slot}:`, e.message);
-    return null;
-  }
-
-  if (typeof stderrTarget === 'number') fs.closeSync(stderrTarget); // parent closes its fd; child keeps its own
-
-  proc.on('error', e => console.error(`[Relay:${slot}] FFmpeg error:`, e.message));
-
-  proc.on('exit', (code) => {
-    serverLog(`[Relay:${slot}] FFmpeg exited, code: ${code}`);
-    const unexpected = relays.has(slot);
-    const saved = unexpected ? { ...relays.get(slot), proc: undefined } : null;
-    if (code === null) {
-      logAutoActivity('warn',  `Relay ${slot} was stopped`);
-    } else if (code === 0) {
-      logAutoActivity('warn',  `Relay ${slot} ended unexpectedly (exit code 0)`);
-    } else {
-      logAutoActivity('error', `Relay ${slot} crashed (exit code ${code})`);
-    }
-    if (relays.has(slot)) {
-      relays.delete(slot);
-      saveRelays();
-    }
-    if (unexpected && saved && code !== null) {
-      logAutoActivity('info', `Auto-restarting relay ${slot} in 3s…`);
-      setTimeout(() => {
-        const newProc = spawnRelay(slot, saved);
-        if (newProc) {
-          relays.set(slot, { slot, name: saved.name, url: saved.url, logo: saved.logo, startedAt: new Date().toISOString(), pid: newProc.pid, proc: newProc });
-          saveRelays();
-          logAutoActivity('info', `Relay ${slot} auto-restarted`);
-        } else {
-          logAutoActivity('error', `Relay ${slot} failed to auto-restart`);
-        }
-      }, 3000);
-    }
-  });
-
-  return proc;
-}
-
-function killRelay(slot) {
-  const relay = relays.get(slot);
-  if (!relay) return false;
-  if (relay.proc) {
-    relay.proc.kill('SIGKILL');
-  } else if (relay.pid) {
-    try { process.kill(relay.pid, 'SIGKILL'); } catch {}
-  }
-  relays.delete(slot);
-  saveRelays();
-  return true;
-}
-
-const launching = new Set();
-
-async function launchStream(s) {
-  const slot = findFreeSlot(s.preferredSlot);
-  if (!slot) {
-    const msg = `No relay slots available (max ${settings.maxSlots || 2})`;
-    logAutoActivity('error', msg);
-    return { ok: false, error: msg };
-  }
-
-  if (launching.has(slot)) return { ok: false, error: `Slot ${slot} is already being launched` };
-  launching.add(slot);
-
-  const proc = spawnRelay(slot, s);
-  if (!proc) { launching.delete(slot); return { ok: false, error: 'Failed to spawn FFmpeg' }; }
-
-  const startedAt = new Date().toISOString();
-  relays.set(slot, { slot, name: s.name, url: s.url, logo: s.logo || null, startedAt, pid: proc.pid, proc });
-  launching.delete(slot);
-  saveRelays();
-
-  // Log history after relay is confirmed started
-  if (!s.noHistory) {
-    const latest = history[history.length - 1];
-    if (!latest || latest.url !== s.url) {
-      history.push({
-        id:           uuidv4(),
-        scheduleId:   s.id,
-        scheduleName: s.name,
-        url:          s.url,
-        logo:         s.logo || null,
-        player:       slot,
-        startedAt,
-        status:       'launched'
-      });
-      saveHistory();
-    }
-  }
-
-  const idx = schedules.findIndex(x => x.id === s.id);
-  if (idx !== -1) { schedules[idx].lastRun = startedAt; saveSchedules(); }
-
-  serverLog(`[Relay] Spawned ${slot} for ${s.url}`);
-  return { ok: true, slot };
-}
 
 // ── Auto-Scheduler ────────────────────────────────────────────────────────────
+const { runAutoScheduler } = require('./src/auto-scheduler');
 let autoSchedCronJob   = null;
 const autoSchedSSEClients  = new Set();
 const dashboardSSEClients  = new Set();
@@ -664,139 +499,18 @@ async function refreshM3U() {
   const raw = Buffer.from(resp.data).toString('utf8');
   const channels = parseM3U(raw);
   m3uMemCache = { channels, fetchedAt: Date.now(), sourceUrl: url, byteSize: resp.data.byteLength };
-  await fs.promises.writeFile(M3U_CACHE_PATH, JSON.stringify(m3uMemCache));
+  await saveM3UCacheStreamed();
   serverLog(`[M3U] Refreshed: ${channels.length} channels`);
   return channels.length;
-}
-
-async function runAutoScheduler() {
-  logAutoActivity('info', 'Running daily check…');
-  const { searchString, apiEndpoint } = autoScheduler;
-
-  if (!searchString || !apiEndpoint) {
-    logAutoActivity('error', 'Search string or API endpoint not configured');
-    return;
-  }
-  if (!m3uMemCache || !m3uMemCache.sourceUrl) {
-    logAutoActivity('error', 'M3U cache not loaded — please load M3U manually first');
-    return;
-  }
-
-  if (autoScheduler.refreshBeforeRun) {
-    try {
-      logAutoActivity('info', 'Refreshing M3U…');
-      const count = await refreshM3U();
-      logAutoActivity('info', `M3U refreshed — ${count} channels loaded`);
-    } catch (e) {
-      logAutoActivity('error', `M3U refresh failed: ${e.message}`);
-      return;
-    }
-  }
-
-  const now    = new Date();
-  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const yyyy   = etDate.getFullYear();
-  const mm     = String(etDate.getMonth() + 1).padStart(2, '0');
-  const dd     = String(etDate.getDate()).padStart(2, '0');
-  const dateStr = `${yyyy}${mm}${dd}`;
-  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const friendlyDate = `${monthNames[etDate.getMonth()]} ${etDate.getDate()}`;
-
-  let events;
-  try {
-    const resp = await axios.get(`${apiEndpoint}?dates=${dateStr}`, { timeout: 10000 });
-    events = resp.data.events || [];
-  } catch (e) {
-    logAutoActivity('error', `API error: ${e.message}`);
-    return;
-  }
-
-  const matches = events.filter(ev => {
-    const competitors = ev.competitions?.[0]?.competitors || [];
-    return competitors.some(c =>
-      c.team?.displayName?.toLowerCase().includes(searchString.toLowerCase()) ||
-      c.team?.location?.toLowerCase().includes(searchString.toLowerCase())
-    );
-  });
-
-  if (matches.length === 0) {
-    logAutoActivity('info', `No ${searchString} games found today (${friendlyDate})`);
-    return;
-  }
-
-  for (const ev of matches) {
-    const gameName = ev.name;
-
-    const gameUtc = new Date(ev.date);
-    const gameEt  = new Date(gameUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    gameEt.setMinutes(gameEt.getMinutes() + 10);
-    const hh  = String(gameEt.getHours()).padStart(2, '0');
-    const min = String(gameEt.getMinutes()).padStart(2, '0');
-    const runAt = `${yyyy}-${mm}-${dd}T${hh}:${min}`;
-
-    const channels = m3uMemCache.channels || [];
-    const search   = searchString.toLowerCase();
-    const dateLow  = friendlyDate.toLowerCase();
-
-    const competitors = ev.competitions?.[0]?.competitors || [];
-    const opponent = competitors
-      .find(c => !c.team?.displayName?.toLowerCase().includes(searchString.toLowerCase()) &&
-                 !c.team?.location?.toLowerCase().includes(searchString.toLowerCase()))
-      ?.team?.location?.toLowerCase() || null;
-
-    let matching = channels.filter(ch => {
-      const name = ch.searchName || (ch.name || '').toLowerCase();
-      return name.includes(search) && name.includes(dateLow);
-    });
-
-    if (matching.length > 1 && opponent) {
-      const byOpponent = matching.filter(ch => (ch.searchName || (ch.name || '').toLowerCase()).includes(opponent));
-      if (byOpponent.length > 0) matching = byOpponent;
-    }
-
-    if (matching.length === 0) {
-      logAutoActivity('warn', `Found ${gameName} but no M3U channel matched ${searchString} on ${friendlyDate}`);
-      continue;
-    }
-
-    const ch = matching[0];
-
-    const schedRunAt = runAt;
-
-    const isDuplicate = schedules.some(s =>
-      s.url === ch.url && s.runAt && s.runAt.startsWith(`${yyyy}-${mm}-${dd}`)
-    );
-    if (isDuplicate) {
-      logAutoActivity('info', `${gameName} already scheduled — skipping`);
-      continue;
-    }
-
-    const s = {
-      id:            uuidv4(),
-      name:          ch.name,
-      url:           ch.url,
-      logo:          ch.logo || null,
-      scheduleType:  'once',
-      runAt:         schedRunAt,
-      preferredSlot: autoScheduler.preferredSlot || null,
-      enabled:       true,
-      createdAt:     new Date().toISOString(),
-      lastRun:       null
-    };
-    schedules.push(s);
-    saveSchedules();
-    registerSchedule(s);
-    const h24 = parseInt(hh, 10);
-    const fmtTime = `${h24 % 12 || 12}:${min} ${h24 >= 12 ? 'PM' : 'AM'}`;
-    logAutoActivity('success', `Scheduled ${gameName} at ${fmtTime} ET (+10 min) → ${ch.name}`);
-  }
 }
 
 function startAutoSchedCron() {
   if (autoSchedCronJob) { autoSchedCronJob.stop(); autoSchedCronJob = null; }
   if (!autoScheduler.enabled || !autoScheduler.checkTime) return;
   const [h, m] = autoScheduler.checkTime.split(':');
-  autoSchedCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, runAutoScheduler, { timezone: 'America/New_York' });
+  autoSchedCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, () => {
+    runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U });
+  }, { timezone: 'America/New_York' });
   serverLog(`[AutoSched] Cron set for ${autoScheduler.checkTime} ET daily`);
 }
 
@@ -862,7 +576,7 @@ app.post('/api/auto-scheduler/disable', (req, res) => {
 
 app.post('/api/auto-scheduler/run', async (req, res) => {
   res.json({ ok: true });
-  try { await runAutoScheduler(); } catch (e) { logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message); }
+  try { await runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U }); } catch (e) { logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message); }
 });
 
 // Catch-all: serve index.html for any unmatched route (enables History API navigation)

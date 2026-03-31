@@ -1200,13 +1200,7 @@ document.getElementById('as-toggle').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('as-refresh-toggle').addEventListener('click', () => {
-  asData.refreshBeforeRun = !asData.refreshBeforeRun;
-  updateAsRefreshToggle();
-  scheduleAsSave();
-});
-
-const scheduleAsSave = debounce(async () => {
+const executeAsSave = async () => {
   await PUT('/api/auto-scheduler', {
     searchString:     document.getElementById('as-search').value.trim(),
     checkTime:        document.getElementById('as-time').value,
@@ -1215,11 +1209,19 @@ const scheduleAsSave = debounce(async () => {
     preferredSlot:    document.getElementById('as-slot').value || null,
   });
   toast('Auto-Scheduler saved');
-}, 2000);
+};
+const scheduleAsSave = debounce(executeAsSave, 2000);
+
+document.getElementById('as-refresh-toggle').addEventListener('click', () => {
+  asData.refreshBeforeRun = !asData.refreshBeforeRun;
+  updateAsRefreshToggle();
+  executeAsSave();
+});
+
 ['as-search', 'as-time', 'as-endpoint'].forEach(id => {
   document.getElementById(id).addEventListener('input', scheduleAsSave);
 });
-document.getElementById('as-slot').addEventListener('change', scheduleAsSave);
+document.getElementById('as-slot').addEventListener('change', executeAsSave);
 
 document.getElementById('as-run-btn').addEventListener('click', async () => {
   const btn = document.getElementById('as-run-btn');
