@@ -5,6 +5,94 @@ let schedules = [];
 let history   = [];
 
 /* ═══════════════════════════════════════════
+   Timezone list (IANA → city, ordered UTC-12→+14)
+═══════════════════════════════════════════ */
+const TIMEZONES = [
+  { value: 'Pacific/Midway',                label: 'Midway Island'     },
+  { value: 'Pacific/Honolulu',              label: 'Honolulu'          },
+  { value: 'America/Anchorage',             label: 'Anchorage'         },
+  { value: 'America/Vancouver',             label: 'Vancouver'         },
+  { value: 'America/Los_Angeles',           label: 'Los Angeles'       },
+  { value: 'America/Phoenix',               label: 'Phoenix'           },
+  { value: 'America/Denver',                label: 'Denver'            },
+  { value: 'America/Mexico_City',           label: 'Mexico City'       },
+  { value: 'America/Chicago',               label: 'Chicago'           },
+  { value: 'America/Bogota',                label: 'Bogotá'            },
+  { value: 'America/Lima',                  label: 'Lima'              },
+  { value: 'America/New_York',              label: 'New York'          },
+  { value: 'America/Caracas',               label: 'Caracas'           },
+  { value: 'America/Halifax',               label: 'Halifax'           },
+  { value: 'America/St_Johns',              label: "St. John's"        },
+  { value: 'America/Sao_Paulo',             label: 'São Paulo'         },
+  { value: 'America/Argentina/Buenos_Aires',label: 'Buenos Aires'      },
+  { value: 'Atlantic/South_Georgia',        label: 'South Georgia'     },
+  { value: 'Atlantic/Azores',               label: 'Azores'            },
+  { value: 'Atlantic/Cape_Verde',           label: 'Cape Verde'        },
+  { value: 'Africa/Abidjan',               label: 'Abidjan'           },
+  { value: 'Europe/London',                 label: 'London'            },
+  { value: 'Africa/Lagos',                  label: 'Lagos'             },
+  { value: 'Europe/Berlin',                 label: 'Berlin'            },
+  { value: 'Europe/Paris',                  label: 'Paris'             },
+  { value: 'Europe/Rome',                   label: 'Rome'              },
+  { value: 'Europe/Madrid',                 label: 'Madrid'            },
+  { value: 'Africa/Cairo',                  label: 'Cairo'             },
+  { value: 'Europe/Athens',                 label: 'Athens'            },
+  { value: 'Africa/Johannesburg',           label: 'Johannesburg'      },
+  { value: 'Europe/Helsinki',               label: 'Helsinki'          },
+  { value: 'Europe/Istanbul',               label: 'Istanbul'          },
+  { value: 'Africa/Nairobi',                label: 'Nairobi'           },
+  { value: 'Asia/Baghdad',                  label: 'Baghdad'           },
+  { value: 'Europe/Moscow',                 label: 'Moscow'            },
+  { value: 'Asia/Tehran',                   label: 'Tehran'            },
+  { value: 'Asia/Dubai',                    label: 'Dubai'             },
+  { value: 'Asia/Baku',                     label: 'Baku'              },
+  { value: 'Asia/Kabul',                    label: 'Kabul'             },
+  { value: 'Asia/Karachi',                  label: 'Karachi'           },
+  { value: 'Asia/Tashkent',                 label: 'Tashkent'          },
+  { value: 'Asia/Kolkata',                  label: 'Mumbai'            },
+  { value: 'Asia/Colombo',                  label: 'Colombo'           },
+  { value: 'Asia/Kathmandu',                label: 'Kathmandu'         },
+  { value: 'Asia/Dhaka',                    label: 'Dhaka'             },
+  { value: 'Asia/Yangon',                   label: 'Yangon'            },
+  { value: 'Asia/Bangkok',                  label: 'Bangkok'           },
+  { value: 'Asia/Jakarta',                  label: 'Jakarta'           },
+  { value: 'Asia/Ho_Chi_Minh',             label: 'Ho Chi Minh City'  },
+  { value: 'Asia/Shanghai',                 label: 'Beijing'           },
+  { value: 'Asia/Singapore',                label: 'Singapore'         },
+  { value: 'Asia/Seoul',                    label: 'Seoul'             },
+  { value: 'Asia/Tokyo',                    label: 'Tokyo'             },
+  { value: 'Australia/Darwin',              label: 'Darwin'            },
+  { value: 'Australia/Adelaide',            label: 'Adelaide'          },
+  { value: 'Australia/Brisbane',            label: 'Brisbane'          },
+  { value: 'Australia/Sydney',              label: 'Sydney'            },
+  { value: 'Asia/Vladivostok',              label: 'Vladivostok'       },
+  { value: 'Pacific/Noumea',                label: 'Nouméa'            },
+  { value: 'Pacific/Guadalcanal',           label: 'Solomon Islands'   },
+  { value: 'Pacific/Auckland',              label: 'Auckland'          },
+  { value: 'Pacific/Fiji',                  label: 'Fiji'              },
+  { value: 'Pacific/Tongatapu',             label: 'Tonga'             },
+  { value: 'Pacific/Kiritimati',            label: 'Line Islands'      },
+];
+
+function tzLabel(iana, city) {
+  try {
+    const parts = new Intl.DateTimeFormat('en', { timeZone: iana, timeZoneName: 'shortOffset' }).formatToParts(new Date());
+    const offset = parts.find(p => p.type === 'timeZoneName')?.value || 'UTC';
+    return `(${offset}) ${city}`;
+  } catch { return city; }
+}
+
+function populateTimezoneSelect() {
+  const sel = document.getElementById('timezone');
+  TIMEZONES.forEach(({ value, label }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = tzLabel(value, label);
+    sel.appendChild(opt);
+  });
+}
+
+/* ═══════════════════════════════════════════
    Navigation
 ═══════════════════════════════════════════ */
 const pages = { dashboard:'Dashboard', 'activity-log':'Activity Log', settings:'Settings' };
@@ -544,6 +632,7 @@ async function loadCacheInfo() {
     document.getElementById('ffmpeg-log-path').value   = settingsRes.ffmpegLogPath      || '';
     document.getElementById('ffmpeg-log-max-mb').value = settingsRes.ffmpegLogMaxSizeMb ?? 10;
     updateDebugLogToggle();
+    document.getElementById('timezone').value = settingsRes.timezone || 'America/New_York';
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
@@ -680,6 +769,10 @@ document.getElementById('ffmpeg-log-path').addEventListener('input', debounce(as
 document.getElementById('ffmpeg-log-max-mb').addEventListener('change', async () => {
   await PUT('/api/settings', { ffmpegLogMaxSizeMb: parseInt(document.getElementById('ffmpeg-log-max-mb').value) || 10 });
   toast('Max log size saved');
+});
+document.getElementById('timezone').addEventListener('change', async () => {
+  await PUT('/api/settings', { timezone: document.getElementById('timezone').value });
+  toast('Timezone saved');
 });
 
 // Search
@@ -1139,6 +1232,7 @@ function fmtDt(iso) {
    Init
 ═══════════════════════════════════════════ */
 (async () => {
+  populateTimezoneSelect();
   await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo(), loadAutoScheduler()]);
   try {
     const r = await GET('/api/relays');
@@ -1183,7 +1277,7 @@ function updateAsToggle() {
   const on         = asData.enabled || false;
   const refreshRow = document.getElementById('as-refresh-row');
   setToggleState('as-toggle', on);
-  ['as-search', 'as-time', 'as-endpoint', 'as-run-btn'].forEach(id => {
+  ['as-search', 'as-time', 'as-offset', 'as-endpoint', 'as-run-btn'].forEach(id => {
     const el = document.getElementById(id);
     el.disabled      = !on;
     el.style.opacity = on ? '' : '0.4';
@@ -1234,6 +1328,7 @@ async function loadAutoScheduler() {
   asData = await GET('/api/auto-scheduler');
   document.getElementById('as-search').value   = asData.searchString || '';
   document.getElementById('as-time').value     = asData.checkTime || '';
+  document.getElementById('as-offset').value   = asData.startOffset ?? 10;
   document.getElementById('as-endpoint').value = asData.apiEndpoint || '';
   populateSlotDropdown('as-slot', asData.preferredSlot || '');
   updateAsToggle();
@@ -1258,6 +1353,7 @@ const executeAsSave = async () => {
   await PUT('/api/auto-scheduler', {
     searchString:     document.getElementById('as-search').value.trim(),
     checkTime:        document.getElementById('as-time').value,
+    startOffset:      Math.max(0, parseInt(document.getElementById('as-offset').value) || 0),
     apiEndpoint:      document.getElementById('as-endpoint').value.trim(),
     refreshBeforeRun: asData.refreshBeforeRun || false,
     preferredSlot:    document.getElementById('as-slot').value || null,
@@ -1272,7 +1368,7 @@ document.getElementById('as-refresh-toggle').addEventListener('click', () => {
   executeAsSave();
 });
 
-['as-search', 'as-time', 'as-endpoint'].forEach(id => {
+['as-search', 'as-time', 'as-offset', 'as-endpoint'].forEach(id => {
   document.getElementById(id).addEventListener('input', scheduleAsSave);
 });
 document.getElementById('as-slot').addEventListener('change', executeAsSave);

@@ -115,6 +115,16 @@
     <div class="dashboard-col">
 
       <div class="card">
+        <div class="card-header"><div class="card-title">🌍 Timezone</div></div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="lbl">Server Timezone</label>
+            <select id="timezone"></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card-header"><div class="card-title">📡 Xtream / M3U Source</div></div>
         <div class="form-grid">
           <div class="field">
@@ -186,14 +196,20 @@
             </div>
           </label>
         </div>
-        <div class="form-grid form-grid-2">
+        <div class="form-grid">
           <div class="field">
             <label class="lbl">Search String</label>
             <input type="text" id="as-search" placeholder="e.g. Texas Tech"/>
           </div>
+        </div>
+        <div class="form-grid form-grid-2 mt-16">
           <div class="field">
-            <label class="lbl">Daily Check Time (Eastern)</label>
+            <label class="lbl">Daily Check Time</label>
             <input type="time" id="as-time"/>
+          </div>
+          <div class="field">
+            <label class="lbl">Start Offset (minutes)</label>
+            <input type="number" id="as-offset" min="0" max="120" placeholder="10"/>
           </div>
         </div>
         <div class="field mt-16">

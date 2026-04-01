@@ -8,11 +8,12 @@ async function runAutoScheduler(context) {
     saveSchedules,
     registerSchedule,
     logAutoActivity,
-    refreshM3U
+    refreshM3U,
+    timezone
   } = context;
 
   logAutoActivity('info', 'Running daily check…');
-  const { searchString, apiEndpoint } = autoScheduler;
+  const { searchString, apiEndpoint, startOffset = 10 } = autoScheduler;
 
   if (!searchString || !apiEndpoint) {
     logAutoActivity('error', 'Search string or API endpoint not configured');
@@ -35,7 +36,7 @@ async function runAutoScheduler(context) {
   }
 
   const now    = new Date();
-  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const etDate = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
   const yyyy   = etDate.getFullYear();
   const mm     = String(etDate.getMonth() + 1).padStart(2, '0');
   const dd     = String(etDate.getDate()).padStart(2, '0');
@@ -76,8 +77,8 @@ async function runAutoScheduler(context) {
     const gameName = ev.name;
 
     const gameUtc = new Date(ev.date);
-    const gameEt  = new Date(gameUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    gameEt.setMinutes(gameEt.getMinutes() + 10);
+    const gameEt  = new Date(gameUtc.toLocaleString('en-US', { timeZone: timezone }));
+    gameEt.setMinutes(gameEt.getMinutes() + startOffset);
     const hh  = String(gameEt.getHours()).padStart(2, '0');
     const min = String(gameEt.getMinutes()).padStart(2, '0');
     const runAt = `${yyyy}-${mm}-${dd}T${hh}:${min}`;
@@ -136,7 +137,7 @@ async function runAutoScheduler(context) {
     registerSchedule(s);
     const h24 = parseInt(hh, 10);
     const fmtTime = `${h24 % 12 || 12}:${min} ${h24 >= 12 ? 'PM' : 'AM'}`;
-    logAutoActivity('success', `Scheduled ${gameName} at ${fmtTime} ET (+10 min) → ${ch.name}`);
+    logAutoActivity('success', `Scheduled ${gameName} at ${fmtTime} (+${startOffset} min) → ${ch.name}`);
   }
 }
 

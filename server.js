@@ -49,6 +49,7 @@ let autoScheduler = readJSON(AUTO_SCHED_PATH, {
   searchString:     'Texas Tech',
   apiEndpoint:      'https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard',
   checkTime:        '07:00',
+  startOffset:      10,
   refreshBeforeRun: false,
   preferredSlot:    null,
   activityLog:      []
@@ -56,6 +57,7 @@ let autoScheduler = readJSON(AUTO_SCHED_PATH, {
 const MAX_HISTORY = 10;
 let history  = readJSON(HISTORY_PATH, []).slice(-MAX_HISTORY);
 const SETTINGS_DEFAULTS = {
+  timezone:           'America/New_York',
   srsUrl:             'rtmp://192.168.1.125/live',
   srsWatchUrl:        'https://stream.ipnoze.com/live',
   maxSlots:           2,
@@ -65,7 +67,11 @@ const SETTINGS_DEFAULTS = {
   ffmpegLogPath:      path.join(__dirname, 'logs'),
   ffmpegLogMaxSizeMb: 10,
 };
-let settings = { ...SETTINGS_DEFAULTS, ...readJSON(SETTINGS_PATH, {}) };
+const _savedSettings = readJSON(SETTINGS_PATH, {});
+let settings = { ...SETTINGS_DEFAULTS, ..._savedSettings };
+if (Object.keys(SETTINGS_DEFAULTS).some(k => !(k in _savedSettings))) {
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+}
 
 function serverLog(...args) {
   if (settings.debugLogging) console.log(...args);
@@ -229,6 +235,7 @@ app.put('/api/settings', (req, res) => {
   };
   saveSettings();
   startM3URefreshCron();
+  startAutoSchedCron();
   res.json(settings);
 });
 
@@ -550,9 +557,9 @@ function startAutoSchedCron() {
   if (!autoScheduler.enabled || !autoScheduler.checkTime) return;
   const [h, m] = autoScheduler.checkTime.split(':');
   autoSchedCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, () => {
-    runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U });
-  }, { timezone: 'America/New_York' });
-  serverLog(`[AutoSched] Cron set for ${autoScheduler.checkTime} ET daily`);
+    runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U, timezone: settings.timezone });
+  }, { timezone: settings.timezone });
+  serverLog(`[AutoSched] Cron set for ${autoScheduler.checkTime} daily (${settings.timezone})`);
 }
 
 let m3uRefreshCronJob = null;
@@ -618,7 +625,7 @@ app.post('/api/auto-scheduler/disable', (req, res) => {
 app.post('/api/auto-scheduler/run', (req, res) => {
   res.json({ ok: true, async: true });
   let runFailed = false;
-  runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U })
+  runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U, timezone: settings.timezone })
     .catch(e => { runFailed = true; logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message); })
     .finally(() => broadcastSSE(autoSchedSSEClients, { type: 'run-complete', ok: !runFailed }));
 });

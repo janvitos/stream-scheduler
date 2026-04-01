@@ -1,554 +1,544 @@
-# Stream Scheduler — Technical Reference
-
-This document serves as the definitive technical map for the Stream Scheduler project. It provides a comprehensive overview of the project's architecture, data flow, coding standards, and getting started instructions for future developers.
-
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [Tech Stack](#tech-stack)
-3. [Project Structure](#project-structure)
-4. [Source of Truth — Data Flow & State Management](#source-of-truth)
-5. [Architectural Patterns](#architectural-patterns)
-6. [Coding Standards](#coding-standards)
-7. [Getting Started](#getting-started)
-8. [API Reference](#api-reference)
-9. [Troubleshooting](#troubleshooting)
-
----
+# CLINE.md - Stream Scheduler Project Documentation
 
 ## Project Overview
 
-**Stream Scheduler** is a Node.js-based application that schedules and manages live stream broadcasts using FFmpeg. It supports:
+**StreamSched** is a self-hosted IPTV stream relay and scheduler application built with Node.js, Express, and vanilla JavaScript/HTML/CSS. It bridges M3U/Xtream Codes playlist sources to an SRS (Simple Realtime Server) instance via FFmpeg for multi-stream broadcasting.
 
-- Scheduled streams (one-time or recurring via cron expressions)
-- M3U playlist parsing and channel management
-- Xtream API integration for M3U sources
-- Multi-stream relay management (up to 5 concurrent streams)
-- Auto-scheduler for ESPN College Baseball scores
-- Event streaming via Server-Sent Events (SSE)
-
-The application runs as a single Express.js server with file-based persistence (no external database).
-
----
-
-## Tech Stack
-
-### Languages & Runtime
-
-| Technology | Version/Notes |
-|------------|---------------|
-| JavaScript | ES6+ |
-| Node.js | 18+ (required for Web Streams) |
-
-### Frameworks & Libraries
-
-| Package | Purpose |
-|---------|---------|
-| `express` | HTTP server and router |
-| `express-session` | Session management for authentication |
-| `bcryptjs` | Password hashing |
-| `node-cron` | Cron job scheduling |
-| `uuid` | UUID generation for IDs |
-
-### External Dependencies
-
-| Dependency | Purpose |
-|------------|---------|
-| `ffmpeg` | Stream encoding and relay publishing |
-| `srs` (SRS) | RTMP streaming server (configured in settings) |
-
-### File Storage
-
-All data is persisted to JSON files in the `data/` directory:
-
-| File | Purpose |
-|------|---------|
-| `data/config.json` | Admin credentials, port, session secret |
-| `data/schedules.json` | Stream schedule definitions |
-| `data/history.json` | Recent stream history (max 10 entries) |
-| `data/settings.json` | FFmpeg settings, M3U refresh config |
-| `data/auto_scheduler.json` | Auto-scheduler config and activity log |
-| `data/relays.json` | Active relay state |
-| `data/m3u_cache.json` | Cached M3U playlist data |
-| `data/sessions.json` | Session store for authentication |
+### Key Capabilities
+- **Multi-slot relaying** — Supports up to 5 simultaneous stream relay slots (`stream01`–`stream05`)
+- **Auto-scheduler** — Automatically fetches sports events from ESPN API and schedules matching channels
+- **M3U/Xtream parsing** — Fetches, caches, and searches IPTV channel lists
+- **Real-time monitoring** — Server-Sent Events (SSE) for live dashboard updates and activity logging
+- **Auto-recovery** — Detects FFmpeg crashes and auto-restarts relays
+- **Session-based auth** — Bcrypt password hashing with secure file-store persistence
 
 ---
 
-## Project Structure
+## Directory Structure
 
 ```
 stream-scheduler/
-├── bin/                    # FFmpeg binary (optional, copied from system)
-├── data/                   # Persistent data directory (created on setup)
-│   ├── config.json        # Admin credentials, port, session secret
-│   ├── schedules.json     # Stream schedules
-│   ├── history.json       # Recent stream history
-│   ├── settings.json      # FFmpeg and M3U settings
-│   ├── auto_scheduler.json # Auto-scheduler config
-│   ├── relays.json        # Active relay state
-│   └── m3u_cache.json     # Cached M3U playlist
-├── public/                 # Static assets and frontend
-│   ├── index.html         # Main dashboard
-│   ├── login.html         # Login page
-│   ├── app.js             # Frontend JavaScript
-│   ├── style.css          # Styles
-│   ├── favicon-*.png      # Icons
-│   └── logo.svg           # Logo
-├── src/                    # Core modules
-│   ├── relay-engine.js    # Stream relay management
-│   ├── m3u-parser.js      # M3U playlist parser
-│   └── auto-scheduler.js  # ESPN auto-scheduler logic
-├── server.js              # Main Express server
-├── setup.js               # Initialization script
-├── start.bat              # Windows startup script
-├── package.json           # Dependencies and scripts
+├── server.js              # Main Express server (entry point)
+├── setup.js               # Initial config generation script
+├── bin/                   # FFmpeg binary directory (optional, can use system path)
+│   └── ffmpeg.exe         # Windows FFmpeg (if provided locally)
+├── data/                  # Persisted data directory (created at runtime)
+│   ├── config.json       # Server config: port, username, password hash, session secret
+│   ├── schedules.json    # All scheduled streams
+│   ├── history.json      # Recent playback history (last 10 entries)
+│   ├── settings.json     # Runtime settings (SRS URLs, max slots, M3U refresh)
+│   ├── auto_scheduler.json # Auto-scheduler config + activity log
+│   ├── m3u_cache.json    # Cached M3U channel list
+│   ├── relays.json       # Active relay state (PIDs, start times, logos)
+│   └── sessions.json     # Express session store
+├── public/                # Frontend assets
+│   ├── index.html        # Main HTML template (SINGLE FILE SPA)
+│   ├── login.html        # Authentication page
+│   ├── app.js            # All frontend JavaScript logic
+│   ├── style.css         # CSS styles
+│   ├── logo.svg          # Branding logo
+│   └── fonts/             # Self-hosted Inter font files (woff2)
+├── src/                   # Modular source engines
+│   ├── relay-engine.js   # FFmpeg process management
+│   ├── m3u-parser.js     # M3U playlist parser
+│   └── auto-scheduler.js # Sports event fetching and scheduling
+├── logs/                  # FFmpeg debug log files (when enabled)
+├── LICENSE                # MIT License
+├── package.json           # NPM dependencies
+├── package-lock.json      # Dependency lock file
 ├── README.md              # User documentation
-├── LICENSE                # License file
-├── .gitignore             # Git ignore rules
-└── .gitattributes         # Git attributes
-```
-
-### Directory Purposes
-
-| Directory | Purpose |
-|-----------|---------|
-| `bin/` | Contains FFmpeg binary (optional, can use system path) |
-| `data/` | All persistent JSON data files |
-| `public/` | Static files served by Express (HTML, CSS, JS) |
-| `src/` | Reusable modules imported by server.js |
-
----
-
-## Source of Truth — Data Flow & State Management
-
-### Data Flow Architecture
-
-The application uses a **file-based persistence model** with in-memory caching. All state changes are persisted to disk immediately after mutation.
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    User Interaction                      │
-└─────────────────────┬────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Express Routes                        │
-│  (GET/POST/PUT/DELETE handlers)                          │
-└─────────────────────┬────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                  In-Memory State                         │
-│  • relays (Map)                                          │
-│  • schedules (Array)                                     │
-│  • history (Array)                                       │
-│  • settings (Object)                                     │
-│  • autoScheduler (Object)                                │
-│  • m3uMemCache (Object)                                  │
-└─────────────────────┬────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                File Persistence Layer                     │
-│  • writeJSON() with write locks                          │
-│  • File paths in data/ directory                         │
-└─────────────────────┬────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│              External Systems                             │
-│  • FFmpeg (stream relay)                                 │
-│  • SRS (stream server)                                   │
-│  • ESPN API (auto-scheduler)                             │
-└─────────────────────────────────────────────────────────┘
-```
-
-### State Management Patterns
-
-1. **Singleton State**: All state is global within `server.js` scope.
-2. **Write Locks**: Prevents race conditions when writing JSON files.
-3. **Event Streaming**: SSE endpoints push state changes to connected clients.
-
-### Key State Objects
-
-| State | Location | Persistence |
-|-------|----------|-------------|
-| `relays` | `Map` | `data/relays.json` |
-| `schedules` | `Array` | `data/schedules.json` |
-| `history` | `Array` | `data/history.json` |
-| `settings` | `Object` | `data/settings.json` |
-| `autoScheduler` | `Object` | `data/auto_scheduler.json` |
-| `m3uMemCache` | `Object` | `data/m3u_cache.json` |
-| `sessions` | `Object` | `data/sessions.json` |
-
-### Data Flow Examples
-
-#### Adding a Schedule
-```
-POST /api/schedules
-  → schedules.push(s)
-  → saveSchedules() → writes data/schedules.json
-  → registerSchedule(s) → registers cron/timeout
-```
-
-#### Launching a Stream
-```
-POST /api/play-now
-  → launchStream(s)
-    → findFreeSlot()
-    → spawnRelay() → FFmpeg child process
-    → relays.set(slot, ...)
-    → saveRelays() → writes data/relays.json
-    → history.push()
-    → saveHistory() → writes data/history.json
-    → schedules[idx].lastRun = now
-    → saveSchedules() → writes data/schedules.json
+└── .git*                  # Git-related files
 ```
 
 ---
 
-## Architectural Patterns
+## Dependencies (package.json)
 
-### 1. File-Based Persistence (NoSQL)
-- All data stored as JSON files
-- No external database required
-- Simple CRUD operations via file I/O
+| Package | Version | Purpose |
+|---------|---------|---------|
+| express | ^4.18.2 | Web framework |
+| express-session | ^1.17.3 | Session management |
+| bcryptjs | ^2.4.3 | Password hashing |
+| node-cron | ^3.0.3 | Cron job scheduling |
+| uuid | ^9.0.0 | UUID generation |
 
-### 2. Singleton Pattern
-- Global state objects (`relays`, `schedules`, etc.)
-- Initialized once at server startup
-- Persisted to disk on every change
-
-### 3. Factory Pattern
-- `createRelayEngine()` returns an object with relay management functions
-- `createSSEEndpoint()` returns middleware for SSE subscriptions
-
-### 4. Event-Driven Architecture
-- Cron jobs for scheduled tasks
-- FFmpeg exit events trigger auto-restart
-- SSE for real-time dashboard updates
-
-### 5. Middleware Pattern
-- Express middleware for sessions, auth, static files
-- Custom middleware for SSE connections
-
-### 6. Command-Query Responsibility Segregation (CQRS)
-- GET endpoints for querying state
-- POST/PUT/DELETE for mutating state
-
-### 7. Child Process Management
-- FFmpeg spawned as detached processes
-- Process handles stored in `relays` Map
-- Auto-restart on crash
-
-### 8. Stream Processing
-- SSE for server-to-client streaming
-- M3U download streamed with progress events
+**External Dependencies:**
+- FFmpeg (system binary or in `bin/`)
+- SRS (Simple Realtime Server) for HLS/WebRTC streaming
+- ESPN API (college baseball scoreboard endpoint)
 
 ---
 
-## Coding Standards
+## Backend Architecture
 
-### Naming Conventions
+### Entry Point: `server.js`
 
-| Type | Convention | Example |
-|------|------------|---------|
-| Files | kebab-case | `relay-engine.js` |
-| Functions | camelCase | `spawnRelay()` |
-| Classes | PascalCase | `FileStore` |
-| Constants | UPPER_SNAKE_CASE | `ALL_SLOTS` |
-| Variables | camelCase | `schedules`, `relays` |
-| API Routes | kebab-case in paths | `/api/schedules` |
-| Query Params | kebab-case | `?url=my-stream` |
+The main server file orchestrates all functionality. Key sections in order:
 
-### Error Handling
-
-- Errors logged via `console.error()` or `serverLog()`
-- API errors return JSON with `error` field
-- HTTP status codes: 400 (bad request), 401 (unauthorized), 404 (not found), 500 (server error)
-
+#### 1. Configuration & Persistence Helpers
 ```javascript
-// Example error response
-res.status(400).json({ error: 'URL required' });
+const DATA_DIR = path.join(__dirname, 'data');
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json'); // Required at startup
+
+// Persistent state helpers with write locking to prevent race conditions
+const readJSON = (p, def) => { /* reads and parses JSON */ };
+const writeJSON = (p, d) => { /* writes JSON with promise-based locking */ };
 ```
 
-### Async/Await Usage
-
-- All async operations use `async/await`
-- Promises used for file I/O
-- Error handling with try/catch
-
+#### 2. Import of Module Factories
 ```javascript
-try {
-  const data = await fs.promises.readFile(p);
-} catch (e) {
-  console.error(`[FS] Error reading ${p}:`, e);
-}
+const createRelayEngine = require('./src/relay-engine');
+const { killRelay, launchStream, spawnRelay } = createRelayEngine({...});
+const parseM3U = require('./src/m3u-parser');
+const { runAutoScheduler } = require('./src/auto-scheduler');
 ```
 
-### File I/O Safety
+#### 3. Express App Initialization
+- Middleware: JSON parsing, URL encoding, static files, session (with custom `FileStore`)
+- Auth middleware: `requireAuth` redirects unauthenticated users to `/login` unless accessing `/api/*`
 
-- Write locks prevent race conditions
-- JSON parsing wrapped in try/catch
-- File existence checked before read
+#### 4. REST API Endpoints
 
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Serve dashboard |
+| GET | `/login` | Authentication page |
+| POST | `/api/auth/login` | Login with username/password |
+| POST | `/api/auth/logout` | Logout (destroy session) |
+| POST | `/api/auth/change-password` | Change password (bcrypt hash to disk) |
+| GET | `/api/ping` | Health check, returns boot ID |
+| POST | `/api/system/restart` | Restart service (via NSSM if configured) |
+| GET | `/api/settings` | Retrieve settings |
+| PUT | `/api/settings` | Update settings |
+| GET | `/api/schedules` | List all schedules |
+| POST | `/api/schedules` | Create schedule |
+| PUT | `/api/schedules/:id` | Edit schedule |
+| DELETE | `/api/schedules/:id` | Delete schedule |
+| POST | `/api/play-now` | Launch stream immediately |
+| GET | `/api/history` | Playback history (newest first) |
+| DELETE | `/api/history` | Clear history |
+| GET | `/api/relays` | Active relays list |
+| POST | `/api/relays/:slot/stop` | Stop a relay |
+| GET | `/api/m3u/cache-info` | M3U cache status |
+| POST | `/api/m3u/use-cache` | Load from cache (returns metadata) |
+| GET | `/api/m3u/download?url=` | SSE stream download + parse endpoint |
+| POST | `/api/m3u/search` | Search channels in cache |
+| GET | `/api/events` | Dashboard SSE events |
+| GET | `/api/auto-scheduler/events` | Activity log SSE events |
+| GET | `/api/auto-scheduler` | Auto-scheduler config |
+| PUT | `/api/auto-scheduler` | Update auto-scheduler |
+| POST | `/api/auto-scheduler/enable` | Enable auto-scheduler |
+| POST | `/api/auto-scheduler/disable` | Disable auto-scheduler |
+| POST | `/api/auto-scheduler/run` | Manual run of auto-scheduler |
+
+#### 5. Scheduler Engine (`registerSchedule` / `unregisterSchedule`)
+- Maintains a `cronJobs` Map keyed by schedule ID
+- One-time schedules: `setTimeout` until `runAt`, then deletes from schedules
+- Recurring schedules: `node-cron` job registered with `buildCronFromFrequency()`
+
+#### 6. Relay Engine Integration
+- `relays` Map tracks active relays: `{ slot, name, url, logo, startedAt, pid, proc }`
+- `launchStream(s)` finds free slot, spawns FFmpeg, logs history
+- `killRelay(slot)` terminates relay (SIGKILL) and removes from Map
+
+#### 7. FFmpeg Process Spawning
 ```javascript
-const readJSON = (p, def) => {
-  try { return JSON.parse(fs.readFileSync(p)); }
-  catch { return def; }
-};
+spawn(FFMPEG_PATH, args, { detached: true, stdio: ['ignore', 'ignore', stderrFd] });
+proc.unref(); // Allows Node process to exit while FFmpeg continues
 ```
 
-### Logging
+**Key FFmpeg Args:**
+- `-re`: Read input as live stream (critical for IPTV)
+- `-fflags +genpts+discardcorrupt`: Handle corrupted segments
+- `-reconnect 1` family: Auto-reconnect on stream interruption
+- `-c:v libx264 -preset veryfast -tune zerolatency -crf 23`: H.264 encoding
+- `-c:a aac -b:a 128k`: Audio codec
+- `-f flv -flvflags no_duration_filesize`: RTMP push
 
-- `serverLog()` for debug logging (controlled by `settings.debugLogging`)
-- `logAutoActivity()` for auto-scheduler activity log
-- Console.error() for unexpected errors
+#### 8. Auto-Recovery
+When FFmpeg exits unexpectedly (`relays.has(slot)` still true):
+```javascript
+logAutoActivity('error', `Relay ${slot} crashed (exit code ${code})`);
+setTimeout(() => { spawnRelay(slot, saved); }, 3000); // Auto-restart after 3s
+```
 
-### Session Management
+#### 9. Startup Relay Restoration
+On boot, reads `relays.json`, kills live PIDs with `SIGTERM`, re-spawns via `spawnRelay` to get fresh proc handles for crash detection. Note: streams have brief interruption during restart (unlike crash recovery which is seamless).
 
-- File-based session store
-- 90-day cookie expiration
-- bcrypt for password hashing
-
-### UUID Generation
-
-- `uuidv4()` for all IDs (schedules, history, relays)
+#### 10. SSE Endpoints
+- `/api/events`: Dashboard updates (relay state, history, schedules)
+- `/api/auto-scheduler/events`: Activity log updates
+Both use `clientSet` Set with heartbeat (30s ping) and auto-cleanup on disconnect.
 
 ---
 
-## Getting Started
+## Frontend Architecture (`public/index.html` + `app.js`)
 
-### Prerequisites
+### Single File SPA
+All HTML, CSS, and JavaScript are inlined in `index.html`. No build step or bundler.
 
-- Node.js 18+ installed
-- FFmpeg installed (or copied to `bin/ffmpeg.exe`)
-- Git (optional, for version control)
+### Navigation Pattern
+- Uses History API: `/dashboard`, `/activity-log`, `/settings`
+- Sidebar drawer (mobile) with hamburger toggle
+- Page transitions tear down active relays (cleanup HLS instances)
 
-### Installation Steps
+### Key Functions
 
-1. **Clone or navigate to the project directory**
-   ```bash
-   cd stream-scheduler
-   ```
+#### State Management
+```javascript
+let schedules = [];
+let history = [];
+let relayData = []; // From /api/relays
+let m3uReady = false;
+let hlsInstances = new Map(); // Slot -> Hls instance
+let asData = {}; // Auto-scheduler config
+```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+#### API Helpers
+```javascript
+const api = async (method, path, body) => { /* fetch with auth check */ };
+const GET = p => api('GET', p);
+const POST = (p, b) => api('POST', p, b);
+const PUT = (p, b) => api('PUT', p, b);
+const DELETE = p => api('DELETE', p);
+```
 
-3. **Run setup to create config**
-   ```bash
-   node setup.js
-   ```
-   This will:
-   - Create `data/` directory
-   - Prompt for port, username, password
-   - Generate `data/config.json`
+#### Modal Management
+- `showModal(id)`, `hideModal(id)` — toggle visibility
+- Schedules modal (`#sched-modal`): new/edit form with schedule type picker
+- Add-to-schedule modal (`#add-modal`): from search results
+- Relay picker modal (`#relay-picker-modal`): slot selection
 
-4. **Start the server**
-   ```bash
-   node server.js
-   ```
-   Or use the Windows batch file:
-   ```bash
-   start.bat
-   ```
+#### Schedule Actions
+- **Run Now**: Launches relay immediately, removes from schedules if one-time
+- **Edit**: Updates schedule (name, URL, type, time, slot)
+- **Delete**: Removes without confirmation
 
-5. **Access the dashboard**
-   Open `http://localhost:3000` in your browser
+#### M3U Flow
+1. User enters URL → `GET` or `Refresh` button
+2. `/api/m3u/download?url=` returns SSE stream with progress events
+3. On complete: stores in `m3uMemCache`, persists to `data/m3u_cache.json`
+4. Search input enabled, can filter channels
+5. Auto-refresh toggle sets cron job (daily at configured time)
 
-### First-Time Configuration
+#### Relay Actions
+- **Preview button** (eye): Loads HLS into hls.js video element
+- **Stop button**: Sends `/api/relays/:slot/stop`, cleans up preview
+- Slot selection in modals respects `maxSlots` setting (1–5)
 
-After running `setup.js`, you'll need to:
+#### Auto-Scheduler Flow
+1. User configures search string, API endpoint, check time, default slot
+2. Toggle enables/disables cron job (or manual run)
+3. `/api/auto-scheduler/run` fires the event fetching logic
+4. Activity log updates via SSE
 
-1. Load an M3U playlist:
-   - Go to the dashboard
-   - Navigate to M3U section
-   - Enter your M3U source URL
-   - Click "Download & Parse"
+---
 
-2. Add schedules:
-   - Click "Add Schedule"
-   - Enter stream URL, name, and schedule type
-   - Save
+## Module Details
 
-3. Configure FFmpeg:
-   - Go to Settings
-   - Adjust max slots, log path, etc.
-   - Save
+### `src/relay-engine.js`
 
-### Running Tests
+Factory function: `createRelayEngine(context)` returns object with:
+- `findFreeSlot(preferred)`: Picks first free slot up to `maxSlots`; prefers given slot if within limit
+- `spawnRelay(slot, s)`: Creates detached FFmpeg process, sets up exit listeners
+- `killRelay(slot)`: Terminates relay via proc or PID
+- `launchStream(s)`: Orchestrates spawn + history logging
 
-No automated tests are included. Manual testing via browser is the primary verification method.
+**Context Parameters:**
+- `getSettings()`: Returns settings from `data/settings.json`
+- `ALL_SLOTS`: `['stream01', 'stream02', 'stream03', 'stream04', 'stream05']`
+- `relays`: Shared Map for relay state
+- `FFMPEG_PATH`: Resolved binary path (local bin or system)
+- Callbacks: `saveRelays`, `logAutoActivity`, `getHistory`, `saveHistory`, `schedules`, `saveSchedules`, `serverLog`
 
-### Development Mode
+**Exit Event Handling:**
+- `code === null`: Relay was stopped (manual SIGKILL)
+- `code === 0`: Ended unexpectedly (stream finished?)
+- `code !== null, 0`: Crashed (auto-restart triggered if still in relays Map)
 
-Enable debug logging:
-```bash
-# Edit data/settings.json
+---
+
+### `src/m3u-parser.js`
+
+Function: `parseM3U(text)` — returns array of channel objects.
+
+**Parsing Logic:**
+1. Split by newlines, skip empty lines and lines starting with `#`
+2. For each `#EXTINF:` line:
+   - Extract: `name`, `logo` (tvg-logo), `group` (group-title), `id` (tvg-id)
+   - Parse `tvg-name` for full "Channel | Event" string, extract ISO timestamp into `eventTime` field
+3. Next non-`#` line becomes the URL stream
+
+**Output Format:**
+```javascript
 {
-  "debugLogging": true
+  name: "ESPN",
+  logo: "https://example.com/espn-logo.png",
+  group: "Sports",
+  id: "espn",
+  eventTime: "2026-03-31T19:30", // optional, from tvg-name timestamp
+  url: "http://example.com/stream.ts",
+  searchName: "espn" // lowercase name for searching
 }
 ```
 
-### Stopping the Server
+**Optimizations:**
+- Streamed persistence via `fs.createWriteStream` when saving cache
+- In-memory cache (`m3uMemCache`) used for all searches (faster than disk)
 
-Press `Ctrl+C` in the terminal, or use:
-```bash
-node server.js
-# Then Ctrl+C
+---
+
+### `src/auto-scheduler.js`
+
+Function: `runAutoScheduler(context)` — orchestrates sports event fetching and scheduling.
+
+**Flow:**
+1. Validate config: `searchString`, `apiEndpoint`, `m3uMemCache.sourceUrl`
+2. Optionally refresh M3U cache before run (if `refreshBeforeRun` enabled)
+3. Fetch ESPN scoreboard API with date (Eastern timezone)
+4. Filter events by `searchString` (case-insensitive, checks `competitors[].team.displayName` or `.location`)
+5. For each game:
+   - Find M3U channel matching game name and search string
+   - If multiple matches, filter by opponent location if available
+   - Generate one-time schedule for 10 minutes before game time
+   - Skip if duplicate (same URL on same date)
+6. Each scheduled event logged to `autoScheduler.activityLog`
+
+**Time Handling:**
+- API returns UTC; converted via `America/New_York` timezone (DST-aware)
+- Game time offset +10 minutes to ensure stream is ready before kickoff
+- Uses server's Eastern timezone for display formatting
+
+---
+
+## Data File Schema
+
+### `config.json`
+```json
+{
+  "port": 3000,
+  "username": "admin",
+  "passwordHash": "$2a$12$...",
+  "sessionSecret": "hex-string"
+}
 ```
 
-### Windows Startup
+### `schedules.json`
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Texas Tech vs Oklahoma",
+    "url": "http://example.com/stream.ts",
+    "logo": "https://...",
+    "scheduleType": "cron|once",
+    "runAt": "2026-04-01T20:30" || null,
+    "cronExpr": "0 20 * * *" || null,
+    "frequency": "daily|weekly|monthly" || null,
+    "recurTime": "20:00",
+    "recurDay": 1 || null, // 0-6 for weekly, 1-31 for monthly
+    "preferredSlot": "stream02" || null,
+    "enabled": true,
+    "createdAt": "ISO timestamp",
+    "lastRun": "ISO timestamp" || null,
+    "nextRun": "ISO timestamp" || null
+  }
+]
+```
 
-Use `start.bat` for automatic Windows startup:
-```bash
-start.bat
+### `settings.json`
+```json
+{
+  "timezone": "America/New_York",
+  "srsUrl": "rtmp://192.168.1.125/live",
+  "srsWatchUrl": "https://stream.ipnoze.com/live",
+  "maxSlots": 2,
+  "m3uAutoRefresh": false,
+  "m3uRefreshTime": "06:00",
+  "debugLogging": false,
+  "ffmpegLogPath": "/path/to/logs",
+  "ffmpegLogMaxSizeMb": 10
+}
+```
+
+### `auto_scheduler.json`
+```json
+{
+  "enabled": false,
+  "searchString": "Texas Tech",
+  "apiEndpoint": "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard",
+  "checkTime": "07:00",
+  "refreshBeforeRun": false,
+  "preferredSlot": null,
+  "activityLog": [
+    {
+      "type": "info|warn|error|success",
+      "message": "...",
+      "timestamp": "ISO timestamp"
+    }
+  ] // capped at 100 entries
+}
+```
+
+### `m3u_cache.json`
+```json
+{
+  "fetchedAt": 1743465600000,
+  "sourceUrl": "http://...",
+  "byteSize": 123456,
+  "channels": [ ... ] // full channel list from m3u-parser
+}
+```
+
+### `relays.json`
+```json
+[
+  {
+    "slot": "stream02",
+    "name": "ESPN - Texas Tech",
+    "url": "http://...",
+    "logo": "https://...",
+    "startedAt": "ISO timestamp"
+    // NOTE: proc and pid are NOT persisted (stripped for JSON serializability)
+  }
+]
+```
+
+### `history.json`
+```json
+[
+  {
+    "id": "uuid",
+    "scheduleId": "uuid",
+    "scheduleName": "ESPN - Texas Tech",
+    "url": "http://...",
+    "logo": "https://...",
+    "player": "stream02",
+    "startedAt": "ISO timestamp",
+    "status": "launched"
+  }
+] // capped at 10 entries
 ```
 
 ---
 
 ## API Reference
 
-### Authentication
+### `/api/play-now`
+Launches a stream immediately.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/login` | GET | Login page |
-| `/api/auth/login` | POST | Authenticate user |
-| `/api/auth/logout` | POST | Logout user |
-| `/api/auth/change-password` | POST | Change password |
+**Request (POST):**
+```json
+{
+  "name": "Stream Name",
+  "url": "http://...",
+  "logo": "https://...",      // optional
+  "preferredSlot": "stream02", // optional
+  "force": true              // optional: kill existing relay if occupied
+}
+```
 
-### Schedules
+**Response:**
+```json
+{
+  "ok": true,
+  "slot": "stream02"
+}
+```
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/schedules` | GET | List all schedules |
-| `/api/schedules` | POST | Create new schedule |
-| `/api/schedules/:id` | PUT | Update schedule |
-| `/api/schedules/:id` | DELETE | Delete schedule |
+---
 
-### Streams
+## Security Considerations
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/play-now` | POST | Launch stream immediately |
-| `/api/relays` | GET | List active relays |
-| `/api/relays/:slot/stop` | POST | Stop specific relay |
+1. **Authentication**: Session-based with bcrypt password hashing (12 rounds)
+2. **Session Store**: File-backed (`data/sessions.json`) for persistence across restarts
+3. **Password Policy**: Minimum 6 characters, enforced on UI and API
+4. **Rate Limiting**: No explicit limits — consider adding middleware for production
+5. **CORS**: No CORS headers configured — binds to LAN access only by design
+6. **HTTPS**: Not enforced by app; reverse proxy (Nginx/Caddy) should handle SSL
+7. **Boot ID**: `/api/ping` returns unique boot ID; restart endpoint verifies ID change
 
-### M3U Management
+---
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/m3u/cache-info` | GET | Get cache info |
-| `/api/m3u/use-cache` | POST | Use cached M3U |
-| `/api/m3u/download` | GET | Download and parse M3U |
-| `/api/m3u/search` | POST | Search channels |
+## Common Operations
 
-### Auto-Scheduler
+### Initial Setup
+```bash
+node setup.js
+# Creates data/config.json with interactive prompts for:
+# - Port (default: 3000)
+# - Username (default: admin)
+# - Password (min 6 chars, bcrypt hashed)
+```
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/auto-scheduler` | GET | Get config |
-| `/api/auto-scheduler` | PUT | Update config |
-| `/api/auto-scheduler/enable` | POST | Enable auto-scheduler |
-| `/api/auto-scheduler/disable` | POST | Disable auto-scheduler |
-| `/api/auto-scheduler/run` | POST | Run immediately |
+### Starting the Server
+```bash
+node server.js
+# Output includes: ✓ Stream Scheduler running at http://0.0.0.0:PORT
+```
 
-### Settings
+### Windows Autostart (NSSM)
+```bash
+nssm install StreamSched node server.js
+# In NSSM GUI: set Startup directory to project root, Service name = "StreamSched"
+```
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/settings` | GET | Get settings |
-| `/api/settings` | PUT | Update settings |
-
-### System
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/ping` | GET | Health check |
-| `/api/system/restart` | POST | Restart service |
-| `/api/proxy-image` | GET | Proxy image for CORS |
-
-### SSE Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/events` | GET | Dashboard events |
-| `/api/auto-scheduler/events` | GET | Auto-scheduler events |
+### Data Directory Structure
+Ensure `data/` exists with proper permissions. Contents are created automatically on first run except for config.json (requires setup).
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+### FFmpeg Crash Auto-Recovery Not Working
+- Check debug logging: enable in Settings → Debug Logging
+- Verify `relays.json` PIDs don't conflict (check for zombie processes)
+- Ensure SRS is running and accepting RTMP connections
 
-#### "config.json not found"
-- Run `node setup.js` to create config
+### M3U Cache Not Loading
+- Verify `data/m3u_cache.json` exists and is valid JSON
+- Check server logs for parse errors
+- M3U URL must be HTTPS or allow HTTP from server IP
 
-#### "No relay slots available"
-- Increase `maxSlots` in settings (max 5)
-- Stop existing relays first
-
-#### FFmpeg not found
-- Install FFmpeg or copy to `bin/ffmpeg.exe`
-
-#### M3U cache not loading
-- Check `data/m3u_cache.json` exists
-- Verify source URL is accessible
-
-#### Session expired
-- Clear browser cookies or restart server
-- Session secret in `config.json` must match
-
-#### Auto-scheduler not running
-- Check `data/auto_scheduler.json` has `enabled: true`
-- Verify ESPN API endpoint is accessible
-
-### Debug Mode
-
-Enable verbose logging:
-```json
-// data/settings.json
-{
-  "debugLogging": true
-}
-```
-
-### Log Files
-
-FFmpeg logs are written to:
-- `logs/ffmpeg-{slot}.log` (if debugLogging enabled)
-- Check `data/auto_scheduler.json` for activity log
+### Schedule Not Running at Expected Time
+- Verify `checkTime` in auto-scheduler matches server's timezone (Eastern)
+- One-time schedules delete after firing; recurring need cronExpr validation
+- Activity log will show if ESPN API fetch failed or no matches found
 
 ---
 
-## Appendix
+## Environment Variables
 
-### Environment Variables
-
-None required. All configuration is file-based.
-
-### Security Notes
-
-- Change default session secret in `config.json`
-- Use strong passwords (bcrypt with cost 12)
-- HTTPS recommended for production
-- Image proxy validates URLs to prevent SSRF
-
-### License
-
-See `LICENSE` file.
-
-### Contributing
-
-1. Follow existing coding standards
-2. Update this document when adding features
-3. Test manually before committing
+None required. All configuration is managed via JSON files and UI settings.
 
 ---
 
-*Last updated: March 31, 2026*
+## Notes for Coding Agents
+
+### TypeScript Conversion
+The project uses plain JavaScript. If converting to TypeScript, consider:
+- Type definitions for all module factory contexts
+- Strict typing for Map values (relay entries have nullable `proc`)
+- JSDoc comments preserved from current codebase
+
+### Breaking Changes
+- Changing FFmpeg args could affect compatibility with certain streams
+- Modifying cron expressions requires re-registering schedules
+- Session secret in `config.json` must be updated if changing auth behavior
+
+### Performance Considerations
+- M3U cache uses streamed persistence to avoid blocking on large files
+- In-memory cache provides fast search; disk used for persistence only
+- SSE connections managed per-client; monitor connection count for high-scale deployments
+
+### Testing Strategy
+No test suite configured. Recommended additions:
+- Unit tests for `m3u-parser.js` (M3U string → channel array)
+- Mock FFmpeg spawning in relay-engine tests
+- Schedule cron expression builder validation
+
+---
+
+## License
+
+MIT License — see LICENSE file.
