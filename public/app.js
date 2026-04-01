@@ -301,17 +301,28 @@ document.addEventListener('click', async (e) => {
 ═══════════════════════════════════════════ */
 let editingId = null;
 
+function setTypeButtonGroupValue(groupId, value) {
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  const inputId = groupId.replace('-group', '');
+  const input = document.getElementById(inputId);
+  if (input) input.value = value;
+  group.querySelectorAll('.btn-group-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === value);
+  });
+}
+
 function openNewModal() {
   editingId = null;
   document.getElementById('sched-modal-title').textContent = 'New Schedule';
   document.getElementById('sm-name').value      = '';
   document.getElementById('sm-url').value       = '';
-  document.getElementById('sm-type').value      = 'now';
   document.getElementById('sm-runat').value     = localDateTimeValue();
   document.getElementById('sm-frequency').value = 'daily';
   document.getElementById('sm-recur-time').value = '20:00';
   populateRecurDaySelect('sm', 'daily');
   populateSlotDropdown('sm-slot');
+  setTypeButtonGroupValue('sm-type-group', 'now');
   toggleTypeFields('sm', 'now');
   showModal('sched-modal');
 }
@@ -323,13 +334,13 @@ function openEditModal(id) {
   document.getElementById('sched-modal-title').textContent = 'Edit Schedule';
   document.getElementById('sm-name').value   = s.name;
   document.getElementById('sm-url').value    = s.url;
-  document.getElementById('sm-type').value   = s.scheduleType;
   document.getElementById('sm-runat').value  = s.runAt ? s.runAt.slice(0,16) : '';
   if (s.scheduleType === 'cron') {
     document.getElementById('sm-frequency').value  = s.frequency || 'daily';
     document.getElementById('sm-recur-time').value = s.recurTime || '20:00';
     populateRecurDaySelect('sm', s.frequency || 'daily', s.recurDay);
   }
+  setTypeButtonGroupValue('sm-type-group', s.scheduleType);
   toggleTypeFields('sm', s.scheduleType);
   populateSlotDropdown('sm-slot', s.preferredSlot);
   showModal('sched-modal');
@@ -348,8 +359,22 @@ function toggleTypeFields(prefix, v) {
     runat.disabled = v !== 'once';
   }
 }
-document.getElementById('sm-type').addEventListener('change', e => toggleTypeFields('sm', e.target.value));
-document.getElementById('am-type').addEventListener('change', e => toggleTypeFields('am', e.target.value));
+// Button group handler for schedule type selection
+function setupTypeButtonGroup(groupId, prefix) {
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  group.querySelectorAll('.btn-group-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const value = btn.dataset.value;
+      document.getElementById(prefix + '-type').value = value;
+      group.querySelectorAll('.btn-group-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      toggleTypeFields(prefix, value);
+    });
+  });
+}
+setupTypeButtonGroup('sm-type-group', 'sm');
+setupTypeButtonGroup('am-type-group', 'am');
 
 function ordinal(n) {
   const s = ['th','st','nd','rd'], v = n % 100;
@@ -458,6 +483,9 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
   if (!url) { toast('Stream URL is required', 'error'); return; }
   const body = buildSchedulePayload('sm', url);
   if (body.scheduleType === 'now') {
+    if (editingId) {
+      await DELETE(`/api/schedules/${editingId}`);
+    }
     hideModal('sched-modal');
     const max = parseInt(document.getElementById('max-slots')?.value || '2');
     if (max === 1) {
@@ -466,6 +494,7 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
     } else {
       showRelayPicker(url, body.name, null, null);
     }
+    loadSchedules();
     return;
   }
   if (editingId) {
@@ -893,11 +922,11 @@ function openAddModal(ch) {
   if (ch.eventTime) {
     const dt = new Date(ch.eventTime);
     dt.setMinutes(dt.getMinutes() + 10);
-    document.getElementById('am-type').value  = 'once';
+    setTypeButtonGroupValue('am-type-group', 'once');
     document.getElementById('am-runat').value = localDateTimeValue(dt);
     toggleTypeFields('am', 'once');
   } else {
-    document.getElementById('am-type').value  = 'now';
+    setTypeButtonGroupValue('am-type-group', 'now');
     document.getElementById('am-runat').value = localDateTimeValue();
     toggleTypeFields('am', 'now');
   }
