@@ -122,7 +122,10 @@ class FileStore extends session.Store {
     try { this.sessions = JSON.parse(fs.readFileSync(this.path)); }
     catch (e) { this.sessions = {}; }
   }
-  saveStore() { fs.writeFileSync(this.path, JSON.stringify(this.sessions)); }
+  saveStore() {
+    try { fs.writeFileSync(this.path, JSON.stringify(this.sessions)); }
+    catch (e) { console.error('[SessionStore] Failed to save sessions:', e.message); }
+  }
   get(sid, cb) { cb(null, this.sessions[sid] || null); }
   set(sid, sess, cb) { this.sessions[sid] = sess; this.saveStore(); if(cb) cb(null); }
   destroy(sid, cb) { delete this.sessions[sid]; this.saveStore(); if(cb) cb(null); }
@@ -166,6 +169,7 @@ app.post('/api/system/restart', (req, res) => {
 });
 
 // ── Image proxy (fixes mixed content on HTTPS) ────────────────────────────────
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB
 app.get('/api/proxy-image', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).end();
@@ -175,12 +179,18 @@ app.get('/api/proxy-image', async (req, res) => {
     const timeout = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
-    
+
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    
-    const contentType = response.headers.get('content-type') || 'image/png';
+
+    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+    if (contentLength > MAX_IMAGE_BYTES) return res.status(400).end();
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.startsWith('image/')) return res.status(400).end();
+
     const arrayBuffer = await response.arrayBuffer();
-    
+    if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) return res.status(400).end();
+
     res.set('Content-Type', contentType);
     res.set('Cache-Control', 'public, max-age=86400');
     res.send(Buffer.from(arrayBuffer));
