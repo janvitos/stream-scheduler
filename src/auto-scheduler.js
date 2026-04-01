@@ -83,6 +83,11 @@ async function runAutoScheduler(context) {
     const min = String(gameEt.getMinutes()).padStart(2, '0');
     const runAt = `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 
+    if (gameEt <= now) {
+      logAutoActivity('warn', `${gameName} already started — skipping`);
+      continue;
+    }
+
     const channels = m3uMemCache.channels || [];
     const search   = searchString.toLowerCase();
     const dateLow  = friendlyDate.toLowerCase();
