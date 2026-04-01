@@ -632,7 +632,12 @@ async function loadCacheInfo() {
     document.getElementById('ffmpeg-log-path').value   = settingsRes.ffmpegLogPath      || '';
     document.getElementById('ffmpeg-log-max-mb').value = settingsRes.ffmpegLogMaxSizeMb ?? 10;
     updateDebugLogToggle();
-    document.getElementById('timezone').value = settingsRes.timezone || 'America/New_York';
+    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const fallbackTz = TIMEZONES.some(t => t.value === detectedTz) ? detectedTz : 'America/New_York';
+    document.getElementById('timezone').value = settingsRes.timezone || fallbackTz;
+    if (!settingsRes.timezone) {
+      await PUT('/api/settings', { timezone: document.getElementById('timezone').value });
+    }
   } catch(e) {
     hint.textContent = 'No cached file yet — enter a URL and click Get.';
     hint.style.color = '';
