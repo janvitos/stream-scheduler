@@ -232,7 +232,7 @@ function makeSchedItem(s) {
         ${s.scheduleType==='once'&&s.runAt?`<span class="item-tag tag-time">${fmtDt(s.runAt)}</span>`:''}
         ${s.scheduleType==='cron'?`<span class="item-tag tag-time">${esc(describeRecurrence(s))}</span>`:''}
         ${channelTag(sChannel)}
-        <span class="item-tag tag-sched-type">${s.scheduleType==='cron'?(s.frequency||'recurring').toUpperCase():'ONE-TIME'}</span>
+        <span class="item-tag tag-sched-type">${s.scheduleType==='cron'?(s.frequency||'recurring').toUpperCase():'ONCE'}</span>
         ${s.lastRun?`<span class="item-tag tag-time">Last: ${fmtDt(s.lastRun)}</span>`:''}
         ${parseInt(document.getElementById('max-slots')?.value||'2')>1?`<span class="item-tag tag-slot">${esc(s.preferredSlot || 'Auto')}</span>`:''}
       </div>

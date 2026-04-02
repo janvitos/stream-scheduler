@@ -117,7 +117,7 @@ The "brain" of the application for automated event coverage.
 - **Edit** — update name, time, relay slot, or recurrence.
 - **Delete** — remove a schedule immediately (no confirmation).
 - Recurring schedules show a frequency badge (`DAILY` / `WEEKLY` / `MONTHLY`) and a compact time tag (e.g. `8:00 PM`, `Mon · 8:00 PM`, `1st · 8:00 PM`).
-- One-time schedules remove themselves after firing.
+- Once schedules remove themselves after firing.
 
 ### Activity Log (Dedicated Page)
 

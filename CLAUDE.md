@@ -69,7 +69,7 @@ UI patterns:
 - Square 38×38 `sched-btn` variants: `sched-btn-edit` (blue), `sched-btn-delete` (red), `sched-btn-stop` (red), `sched-btn-active` (outlined green, used for preview active state).
 - Active Relay cards and Recent Activity are **separate cards** on the dashboard.
 - Relay cards display: logo, stream name, `tag-time` (start time), channel tag, `tag-slot` (slot name, orange tint). `tag-slot` is hidden on both relay and schedule cards when `maxSlots=1`.
-- Schedule items render newest-first. The slot tag always appears when maxSlots>1 (shows "Auto" when no preferred slot is set). The schedule-type badge (`tag-sched-type`) shows `DAILY`, `WEEKLY`, or `MONTHLY` for recurring schedules (falls back to `RECURRING` for legacy cron-only entries), and `ONE-TIME` for one-off schedules.
+- Schedule items render newest-first. The slot tag always appears when maxSlots>1 (shows "Auto" when no preferred slot is set). The schedule-type badge (`tag-sched-type`) shows `DAILY`, `WEEKLY`, or `MONTHLY` for recurring schedules (falls back to `RECURRING` for legacy cron-only entries), and `ONCE` for one-off schedules.
 - Recurring schedule modal uses a sentence-style builder (`recur-sentence`): frequency `<select>` → "at" → time `<input>` → optional "on" + day `<select>` for weekly/monthly. No raw cron expression field is exposed to the user.
 - Delete schedule fires immediately with no confirmation dialog.
 - Channel search results and Recent Activity are displayed in a **2-column grid** (`item-list--grid`); collapses to 1 column below 900px (where sidebar + 2 columns become too cramped). Activity Log also uses the 2-column grid.

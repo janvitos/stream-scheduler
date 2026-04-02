@@ -42,7 +42,7 @@ async function runAutoScheduler(context) {
   const dd     = String(etDate.getDate()).padStart(2, '0');
   const dateStr = `${yyyy}${mm}${dd}`;
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const friendlyDate = `${monthNames[etDate.getMonth()]} ${etDate.getDate()}`;
+  const friendlyDate = `${monthNames[etDate.getMonth()]} ${String(etDate.getDate()).padStart(2, '0')}`;
 
   let events;
   try {
