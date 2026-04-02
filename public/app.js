@@ -122,7 +122,7 @@ function navTo(page) {
   document.getElementById('page-title').textContent = pages[page] || page;
   window.history.pushState(null, '', page === 'dashboard' ? '/' : '/' + page);
   if (page === 'dashboard') {
-    Promise.all([loadSchedules(), loadHistory()]);
+    loadSchedules();
   }
   connectDashboardSSE(); // always connected regardless of current page
   if (page === 'settings') {
@@ -131,7 +131,7 @@ function navTo(page) {
     loadAutoScheduler().then(() => { pg.style.visibility = 'visible'; });
   }
   if (page === 'activity-log') {
-    renderAsLog();
+    loadAutoScheduler();
   }
 }
 
@@ -253,8 +253,6 @@ async function runNow(id) {
     const r = await POST('/api/play-now', { name: s.name, url: s.url, logo: s.logo || null, preferredSlot: 'stream01', force: true });
     r.ok ? toast('▶ Relaying') : toast(r.error || 'Failed to launch relay', 'error');
     if (r.ok && s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
-    await loadHistory();
-    renderDashboard();
   } else {
     showRelayPicker(s.url, s.name, s.logo || null, async () => {
       if (s.scheduleType === 'once') await DELETE(`/api/schedules/${id}`);
@@ -512,44 +510,7 @@ document.getElementById('sched-modal-save').addEventListener('click', async () =
    Dashboard
 ═══════════════════════════════════════════ */
 async function renderDashboard() {
-  // Recent activity — show last 10 entries in a 2-column grid
-  const rh = document.getElementById('recent-history');
-  const recent = history.slice(0, 10);
-  if (!recent.length) { rh.innerHTML = '<div class="empty"><div class="empty-icon">☰</div><p>No recent activity.</p></div>'; return; }
-  rh.innerHTML = '<div class="item-list item-list--grid"></div>';
-  const hl = rh.querySelector('.item-list');
-  const frag = document.createDocumentFragment();
-  recent.forEach(h => frag.appendChild(makeHistoryItem(h)));
-  hl.appendChild(frag);
-}
-
-/* ═══════════════════════════════════════════
-   History
-═══════════════════════════════════════════ */
-async function loadHistory() {
-  history = await GET('/api/history');
-  renderDashboard();
-}
-
-function makeHistoryItem(h) {
-  const div = document.createElement('div');
-  div.className = h.url ? 'media-row log-item ch-card' : 'media-row log-item';
-  if (h.url) {
-    div.dataset.histUrl = h.url;
-    div.dataset.histName = h.scheduleName || 'Unknown';
-    if (h.logo) div.dataset.histLogo = h.logo;
-  }
-  const { channel: hChannel, title: hTitle } = parseName(h.scheduleName);
-  div.innerHTML = `
-    ${logoImg(h.logo)}
-    <div class="item-info">
-      <div class="item-name">${esc(hTitle || h.scheduleName || 'Unknown')}</div>
-      <div class="item-meta">
-        <span class="item-tag tag-time">${fmtDt(h.startedAt)}</span>
-        ${channelTag(hChannel)}
-      </div>
-    </div>`;
-  return div;
+  // Dashboard no longer shows recent activity
 }
 
 
@@ -970,8 +931,6 @@ async function executeRelay(slot) {
   const r = await POST('/api/play-now', payload);
   r.ok ? toast(`▶ Relaying on ${r.slot}`) : toast(r.error || 'Failed to launch relay', 'error');
   if (r.ok && onSuccess) await onSuccess(r);
-  await loadHistory();
-  renderDashboard();
 }
 
 /* ═══════════════════════════════════════════
@@ -1267,7 +1226,7 @@ function fmtDt(iso) {
 ═══════════════════════════════════════════ */
 (async () => {
   populateTimezoneSelect();
-  await Promise.all([loadSchedules(), loadHistory(), loadCacheInfo(), loadAutoScheduler()]);
+  await Promise.all([loadSchedules(), loadCacheInfo(), loadAutoScheduler()]);
   try {
     const r = await GET('/api/relays');
     relayData = r || [];
@@ -1289,14 +1248,33 @@ let asData = {};
 
 function renderAsLog() {
   const log = document.getElementById('as-log');
-  if (!asData.activityLog || asData.activityLog.length === 0) {
+  const mergedEntries = asData.mergedActivityLog || [];
+  const maxSlots = parseInt(document.getElementById('max-slots')?.value || '2');
+  if (!mergedEntries || mergedEntries.length === 0) {
     log.innerHTML = '<div class="empty" style="padding:20px"><p>No activity yet.</p></div>';
     return;
   }
-  log.innerHTML = '<div class="item-list item-list--grid">' + asData.activityLog.map(e => {
+  log.innerHTML = '<div class="item-list item-list--grid">' + mergedEntries.map(e => {
+    // Relay entry
+    if (e.type === 'relay') {
+      const { channel: hChannel, title: hTitle } = parseName(e.scheduleName);
+      const slotTag = maxSlots > 1 ? `<span class="item-tag tag-slot">${esc(e.slot)}</span>` : '';
+      return `<div class="media-row log-item">
+        ${logoImg(e.logo)}
+        <div class="item-info">
+          <div class="item-name">${esc(hTitle || e.scheduleName || 'Unknown')}</div>
+          <div class="item-meta">
+            <span class="item-tag tag-time">${fmtDt(e.timestamp)}</span>
+            ${channelTag(hChannel)}
+            ${slotTag}
+          </div>
+        </div>
+      </div>`;
+    }
+    // Auto-scheduler entry
     const icons = { success: '✅', info: 'ℹ️', warn: '⚠️', error: '❌' };
-    const icon = icons[e.type] || 'ℹ️';
-    const typeClass = e.type || 'info';
+    const icon = icons[e.asType] || 'ℹ️';
+    const typeClass = e.asType || 'info';
     return `<div class="media-row log-item">
       <div class="log-icon log-icon--${typeClass}">${icon}</div>
       <div class="item-info">
@@ -1337,7 +1315,12 @@ function makeSSE(url, onMessage) {
 }
 
 const connectDashboardSSE = makeSSE('/api/events', ({ type, relays }) => {
-  if (type === 'history')  loadHistory();
+  if (type === 'history') {
+    // Refresh merged activity log if Activity Log page is visible
+    if (document.getElementById('page-activity-log').classList.contains('active')) {
+      loadAutoScheduler();
+    }
+  }
   if (type === 'schedule') loadSchedules();
   if (type === 'relays')   { relayData = relays || []; renderRelays(relayData); }
 });
@@ -1351,7 +1334,19 @@ const connectAutoSchedSSE = makeSSE('/api/auto-scheduler/events', entry => {
   asData.activityLog = asData.activityLog || [];
   asData.activityLog.unshift(entry);
   if (asData.activityLog.length > 100) asData.activityLog.length = 100;
-  renderAsLog();
+
+  // Refresh merged activity log if Activity Log page is visible
+  if (document.getElementById('page-activity-log').classList.contains('active')) {
+    const asEntry = {
+      type: 'auto-scheduler',
+      timestamp: entry.timestamp,
+      message: entry.message,
+      asType: entry.type
+    };
+    asData.mergedActivityLog = asData.mergedActivityLog || [];
+    asData.mergedActivityLog.unshift(asEntry);
+    renderAsLog();
+  }
 });
 
 function updateAsRefreshToggle() {
@@ -1360,6 +1355,28 @@ function updateAsRefreshToggle() {
 
 async function loadAutoScheduler() {
   asData = await GET('/api/auto-scheduler');
+  const historyData = await GET('/api/history');
+
+  // Merge relay history and auto-scheduler activity log
+  const relayEntries = (historyData || []).map(h => ({
+    type: 'relay',
+    timestamp: h.startedAt,
+    scheduleName: h.scheduleName,
+    logo: h.logo,
+    slot: h.player,
+    status: h.status
+  }));
+  const asEntries = (asData.activityLog || []).map(e => ({
+    type: 'auto-scheduler',
+    timestamp: e.timestamp,
+    message: e.message,
+    asType: e.type
+  }));
+  const merged = [...relayEntries, ...asEntries].sort((a, b) =>
+    new Date(b.timestamp) - new Date(a.timestamp)
+  );
+  asData.mergedActivityLog = merged;
+
   document.getElementById('as-search').value   = asData.searchString || '';
   document.getElementById('as-time').value     = asData.checkTime || '';
   document.getElementById('as-offset').value   = asData.startOffset ?? 10;
