@@ -41,12 +41,13 @@ function createRelayEngine(context) {
       ...(settings.debugLogging ? ['-loglevel', 'warning'] : []),
       '-re',
       '-fflags', '+genpts+discardcorrupt',
+      '-err_detect', 'ignore_err',
       '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
       '-rw_timeout', '5000000',
       '-i', s.url,
       '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-crf', '23',
       '-g', '60',
-      '-c:a', 'aac', '-b:a', '128k',
+      '-c:a', 'aac', '-ac', '2', '-b:a', '128k',
       '-f', 'flv', '-flvflags', 'no_duration_filesize',
       outputUrl
     ];
