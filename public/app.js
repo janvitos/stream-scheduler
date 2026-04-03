@@ -1034,7 +1034,7 @@ function makeRelayCard(relay) {
         </div>
       </div>
       <div class="np-header-actions">
-        <button class="sched-btn" data-preview="${esc(relay.slot)}" title="Show/Hide Preview">👁</button>
+        <button class="sched-btn" data-preview="${esc(relay.slot)}" title="Show/Hide Preview">▶</button>
         <button class="sched-btn sched-btn-stop" data-stop="${esc(relay.slot)}" title="Stop relay">■</button>
       </div>
     </div>
