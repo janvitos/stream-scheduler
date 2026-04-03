@@ -1073,11 +1073,12 @@ async function toggleRelayPreview(slot, watchUrl) {
   }
 
   if (isVisible) {
-    video.style.display = 'none';
-    if (placeholder) { setPlaceholderState(false); placeholder.style.display = ''; }
-    btn.classList.remove('sched-btn-active');
-    if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
-    video.pause(); video.src = '';
+video.pause();
+video.removeAttribute('src');
+video.style.display = 'none';
+if (placeholder) { setPlaceholderState(false); placeholder.style.display = ''; }
+btn.classList.remove('sched-btn-active');
+if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
   } else {
     btn.className = 'sched-btn sched-btn-active';
     setPlaceholderState(true);
