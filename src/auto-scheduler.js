@@ -78,6 +78,13 @@ async function runAutoScheduler(context) {
 
     const gameUtc = new Date(ev.date);
     const gameEt  = new Date(gameUtc.toLocaleString('en-US', { timeZone: timezone }));
+    
+    // Extract game time WITHOUT offset for matching
+    const gameHh  = String(gameEt.getHours()).padStart(2, '0');
+    const gameMin = String(gameEt.getMinutes()).padStart(2, '0');
+    const timePattern = `${gameHh}:${gameMin}`;
+    
+    // Add offset for scheduling
     gameEt.setMinutes(gameEt.getMinutes() + startOffset);
     const hh  = String(gameEt.getHours()).padStart(2, '0');
     const min = String(gameEt.getMinutes()).padStart(2, '0');
@@ -94,18 +101,27 @@ async function runAutoScheduler(context) {
 
     const competitors = ev.competitions?.[0]?.competitors || [];
     const opponent = competitors
-      .find(c => !c.team?.displayName?.toLowerCase().includes(searchString.toLowerCase()) &&
-                 !c.team?.location?.toLowerCase().includes(searchString.toLowerCase()))
-      ?.team?.location?.toLowerCase() || null;
+      .find(c => c.team?.shortDisplayName?.toLowerCase() !== search.toLowerCase())
+      ?.team?.shortDisplayName?.toLowerCase() || null;
 
     let matching = channels.filter(ch => {
       const name = ch.searchName || (ch.name || '').toLowerCase();
-      return name.includes(search) && name.includes(dateLow);
+      const hasSearch = name.includes(search);
+      const hasOpponent = name.includes(opponent || '');
+      if (!hasSearch || !hasOpponent) return false;
+      return true;
     });
 
-    if (matching.length > 1 && opponent) {
-      const byOpponent = matching.filter(ch => (ch.searchName || (ch.name || '').toLowerCase()).includes(opponent));
+    if (matching.length > 1) {
+      const byOpponent = matching.filter(ch => (ch.searchName || (ch.name || '').toLowerCase()).includes(opponent || ''));
       if (byOpponent.length > 0) matching = byOpponent;
+      
+      // Filter by time to distinguish doubleheaders (same teams, different times)
+       if (matching.length > 1) {
+         matching = matching.filter(ch => 
+           (ch.searchName || (ch.name || '').toLowerCase()).includes(timePattern.toLowerCase())
+         );
+       }
     }
 
     if (matching.length === 0) {
@@ -142,7 +158,7 @@ async function runAutoScheduler(context) {
     registerSchedule(s);
     const h24 = parseInt(hh, 10);
     const fmtTime = `${h24 % 12 || 12}:${min} ${h24 >= 12 ? 'PM' : 'AM'}`;
-    logAutoActivity('success', `Scheduled ${gameName} at ${fmtTime} (+${startOffset} min) → ${ch.name}`);
+    logAutoActivity('success', `Scheduled ${gameName} at ${fmtTime} (+${startOffset} min)`);
   }
 }
 
