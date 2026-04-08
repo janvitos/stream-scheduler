@@ -1100,7 +1100,7 @@ async function toggleRelayPreview(slot, watchUrl) {
     if (placeholder) placeholder.style.display = 'none';
     video.style.display = 'block';
     btn.className = 'sched-btn';
-    btn.textContent = '⏸';
+    btn.textContent = '⏸︎';
     btn.title = 'Hide Preview';
 
     if (typeof Hls !== 'undefined' && Hls.isSupported()) {
