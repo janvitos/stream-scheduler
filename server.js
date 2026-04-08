@@ -346,6 +346,28 @@ app.post('/api/relays/:slot/stop', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/srs-streams', async (req, res) => {
+  try {
+    const host = new URL(settings.srsUrl.replace(/^rtmp:/, 'http:')).hostname;
+    const r = await fetch(`http://${host}:1985/api/v1/streams/`, { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return res.json({ streams: {} });
+    const data = await r.json();
+    const streams = {};
+    for (const s of (data.streams || [])) {
+      const slot = s.url?.split('/').pop();
+      if (slot) streams[slot] = {
+        kbps:    s.kbps?.recv_30s || 0,
+        width:   s.video?.width   || 0,
+        height:  s.video?.height  || 0,
+        clients: s.clients        || 0,
+      };
+    }
+    res.json({ streams });
+  } catch {
+    res.json({ streams: {} });
+  }
+});
+
 // ── M3U / Xtream ──────────────────────────────────────────────────────────────
 const M3U_CACHE_PATH = path.join(DATA_DIR, 'm3u_cache.json');
 

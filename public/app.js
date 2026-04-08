@@ -984,6 +984,7 @@ document.addEventListener('keydown', e => {
 
 // ── Active Relays ─────────────────────────────────────────────────────────────
 let relayData        = [];
+let srsStats         = {};   // slot → { kbps, width, height, clients }
 let rpPendingPayload = null; // { url, name, logo, onSuccess }
 const hlsInstances = new Map();
 
@@ -1017,6 +1018,34 @@ function showRelayPicker(url, name, logo, onSuccess) {
   showModal('relay-picker-modal');
 }
 
+function buildSrsStatsTags(stats) {
+  if (!stats) return '';
+  const parts = [];
+  if (stats.kbps)                  parts.push(`<span class="item-tag tag-bitrate">${(stats.kbps / 1000).toFixed(1)} Mbps</span>`);
+  if (stats.width && stats.height) parts.push(`<span class="item-tag tag-res">${stats.width}×${stats.height}</span>`);
+  if (stats.clients != null)       parts.push(`<span class="item-tag tag-viewers">👁 ${stats.clients}</span>`);
+  return parts.join('');
+}
+
+function updateAllRelayStats() {
+  const list = document.getElementById('relay-list');
+  if (!list) return;
+  for (const [slot, stats] of Object.entries(srsStats)) {
+    const el = list.querySelector(`[data-srs-stats="${slot}"]`);
+    if (!el) continue;
+    const html = buildSrsStatsTags(stats);
+    if (html) { el.innerHTML = html; el.style.display = ''; }
+  }
+}
+
+async function pollSrsStats() {
+  try {
+    const data = await GET('/api/srs-streams');
+    srsStats = data.streams || {};
+    updateAllRelayStats();
+  } catch {}
+}
+
 function makeRelayCard(relay) {
   const wrap = document.createElement('div');
   wrap.dataset.slot = relay.slot;
@@ -1032,6 +1061,7 @@ function makeRelayCard(relay) {
           ${channelTag(channel)}
           ${parseInt(document.getElementById('max-slots')?.value||'2')>1?`<span class="item-tag tag-slot">${esc(relay.slot)}</span>`:''}
         </div>
+        <div class="item-meta relay-srs-stats" data-srs-stats="${esc(relay.slot)}" style="display:none"></div>
       </div>
       <div class="np-header-actions">
         <button class="sched-btn" data-preview="${esc(relay.slot)}" title="Show/Hide Preview">▶</button>
@@ -1139,6 +1169,7 @@ function renderRelays(relays) {
   }
   list.innerHTML = '';
   relays.forEach(r => list.appendChild(makeRelayCard(r)));
+  updateAllRelayStats();
 }
 
 async function stopRelay(slot) {
@@ -1241,6 +1272,8 @@ function fmtDt(iso) {
   navTo(savedPage);
   connectDashboardSSE();
   connectAutoSchedSSE();
+  pollSrsStats();
+  setInterval(pollSrsStats, 5000);
   // Remove loader only after fonts and data are ready — prevents FOUC
   await document.fonts.ready;
   document.getElementById('app-loader').remove();
