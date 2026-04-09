@@ -373,7 +373,7 @@ textarea { resize: vertical; min-height: 70px; }
 .sched-btn-toggle.disabled { color: var(--muted); }
 
 .sched-btn-preview { font-size: 16px; }
-.sched-btn-stop { font-size: 20px; }
+.sched-btn-stop { font-size: 19px; }
 
 /* ── M3U search ── */
 .channel-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 400px; overflow-y: auto; }
