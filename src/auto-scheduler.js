@@ -100,20 +100,31 @@ async function runAutoScheduler(context) {
     const dateLow  = friendlyDate.toLowerCase();
 
     const competitors = ev.competitions?.[0]?.competitors || [];
-    const opponent = competitors
-      .find(c => c.team?.shortDisplayName?.toLowerCase() !== search.toLowerCase())
-      ?.team?.shortDisplayName?.toLowerCase() || null;
+    const opponentTeam = competitors
+      .find(c => {
+        const t = c.team || {};
+        return ![t.displayName, t.location, t.shortDisplayName, t.name]
+          .filter(Boolean)
+          .some(n => n.toLowerCase().includes(search));
+      })?.team || null;
+    const opponentNames = opponentTeam
+      ? [opponentTeam.displayName, opponentTeam.location, opponentTeam.shortDisplayName, opponentTeam.name]
+          .filter(Boolean).map(n => n.toLowerCase())
+      : [];
 
     let matching = channels.filter(ch => {
       const name = ch.searchName || (ch.name || '').toLowerCase();
       const hasSearch = name.includes(search);
-      const hasOpponent = name.includes(opponent || '');
+      const hasOpponent = opponentNames.length === 0 || opponentNames.some(n => name.includes(n));
       if (!hasSearch || !hasOpponent) return false;
       return true;
     });
 
     if (matching.length > 1) {
-      const byOpponent = matching.filter(ch => (ch.searchName || (ch.name || '').toLowerCase()).includes(opponent || ''));
+      const byOpponent = matching.filter(ch => {
+        const name = ch.searchName || (ch.name || '').toLowerCase();
+        return opponentNames.some(n => name.includes(n));
+      });
       if (byOpponent.length > 0) matching = byOpponent;
       
       // Filter by time to distinguish doubleheaders (same teams, different times)
