@@ -128,11 +128,16 @@ function createRelayEngine(context) {
 
   async function launchStream(s) {
     const settings = getSettings();
-    const slot = findFreeSlot(s.preferredSlot);
+    let slot = findFreeSlot(s.preferredSlot);
     if (!slot) {
-      const msg = `No relay slots available (max ${settings.maxSlots || 2})`;
-      logAutoActivity('error', msg);
-      return { ok: false, error: msg };
+      // All slots occupied — force-replace the preferred slot, or fall back to slot 1
+      const max = Math.max(1, Math.min(5, settings.maxSlots || 2));
+      const preferred = s.preferredSlot && ALL_SLOTS.includes(s.preferredSlot) && ALL_SLOTS.indexOf(s.preferredSlot) < max
+        ? s.preferredSlot
+        : ALL_SLOTS[0];
+      killRelay(preferred);
+      await new Promise(r => setTimeout(r, 1000));
+      slot = preferred;
     }
 
     if (launching.has(slot)) return { ok: false, error: `Slot ${slot} is already being launched` };
