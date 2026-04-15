@@ -121,7 +121,27 @@ async function runAutoScheduler(context) {
         opponentPrefixes.push(words.slice(0, len).join(' '));
       }
     }
-    const opponentNames = [...new Set([...opponentBaseNames, ...opponentPrefixes])];
+
+    // Also extract opponent name directly from ev.name (e.g. "Incarnate Word Cardinals at Texas Tech
+    // Red Raiders") — ESPN team objects sometimes use abbreviations like "UIW" while the game name
+    // always contains the full school name. Generate all word-length prefixes of that name too.
+    const gameNamePrefixes = [];
+    const gameNameLower = (gameName || '').toLowerCase();
+    const nameSep = gameNameLower.match(/^(.+?)\s+(?:at|vs\.?)\s+(.+)$/);
+    if (nameSep) {
+      const [, teamA, teamB] = nameSep;
+      const opFromName = teamA.includes(search) ? teamB.trim()
+                       : teamB.includes(search) ? teamA.trim()
+                       : null;
+      if (opFromName) {
+        const words = opFromName.split(/\s+/);
+        for (let len = 2; len <= words.length; len++) {
+          gameNamePrefixes.push(words.slice(0, len).join(' '));
+        }
+      }
+    }
+
+    const opponentNames = [...new Set([...opponentBaseNames, ...opponentPrefixes, ...gameNamePrefixes])];
 
     let matching = channels.filter(ch => {
       const name = ch.searchName || (ch.name || '').toLowerCase();
