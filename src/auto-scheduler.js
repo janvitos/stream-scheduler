@@ -107,10 +107,21 @@ async function runAutoScheduler(context) {
           .filter(Boolean)
           .some(n => n.toLowerCase().includes(search));
       })?.team || null;
-    const opponentNames = opponentTeam
+    const opponentBaseNames = opponentTeam
       ? [opponentTeam.displayName, opponentTeam.location, opponentTeam.shortDisplayName, opponentTeam.name]
           .filter(Boolean).map(n => n.toLowerCase())
       : [];
+
+    // Add word-prefix variants from displayName so e.g. "Abilene Christian Wildcats"
+    // also matches channels that only include "Abilene Christian" (without the mascot).
+    const opponentPrefixes = [];
+    if (opponentTeam?.displayName) {
+      const words = opponentTeam.displayName.toLowerCase().trim().split(/\s+/);
+      for (let len = 2; len < words.length; len++) {
+        opponentPrefixes.push(words.slice(0, len).join(' '));
+      }
+    }
+    const opponentNames = [...new Set([...opponentBaseNames, ...opponentPrefixes])];
 
     let matching = channels.filter(ch => {
       const name = ch.searchName || (ch.name || '').toLowerCase();
