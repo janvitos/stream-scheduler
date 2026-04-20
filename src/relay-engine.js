@@ -44,6 +44,9 @@ function createRelayEngine(context) {
     const args = [
       ...(settings.debugLogging ? ['-loglevel', 'warning'] : []),
       '-re',
+      '-reconnect_at_eof', '1',
+      '-reconnect_streamed', '1',
+      '-reconnect_delay_max', '7',
       '-fflags', '+genpts+discardcorrupt',
       '-err_detect', 'ignore_err',
       '-rw_timeout', '30000000',
@@ -173,7 +176,6 @@ function createRelayEngine(context) {
       slot = preferred;
     }
 
-    await new Promise(r => setTimeout(r, 2000));
     if (launching.has(slot)) return { ok: false, error: `Slot ${slot} is already being launched` };
     launching.add(slot);
 

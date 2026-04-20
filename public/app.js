@@ -115,8 +115,8 @@ function navTo(page) {
         if (video) { video.pause(); video.src = ''; }
       }
     }
-    hlsInstances.clear();
-  }
+hlsInstances.clear();
+   }
   document.querySelectorAll('.sb-item').forEach(e => e.classList.toggle('active', e.dataset.page === page));
   document.querySelectorAll('.page').forEach(e => e.classList.toggle('active', e.id === 'page-'+page));
   document.getElementById('page-title').textContent = pages[page] || page;
@@ -987,6 +987,15 @@ let relayData        = [];
 let srsStats         = {};   // slot → { kbps, width, height, clients }
 let rpPendingPayload = null; // { url, name, logo, onSuccess }
 const hlsInstances = new Map();
+ let srsPollInterval = null;
+
+ function startSrsPolling() {
+   if (srsPollInterval || relayData.length === 0) return;
+   srsPollInterval = setInterval(pollSrsStats, 5000);
+ }
+ function stopSrsPolling() {
+   if (srsPollInterval) { clearInterval(srsPollInterval); srsPollInterval = null; }
+ }
 
 function showRelayPicker(url, name, logo, onSuccess) {
   rpPendingPayload = { url, name, logo, onSuccess };
@@ -1108,8 +1117,8 @@ async function toggleRelayPreview(slot, watchUrl) {
   video.style.display = 'none';
   if (placeholder) { setPlaceholderState(false); placeholder.style.display = ''; }
   btn.textContent = '▶';
-  btn.title = 'Show/Hide Preview';
- if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
+ btn.title = 'Show/Hide Preview';
+  if (hlsInstances.has(slot)) { hlsInstances.get(slot).destroy(); hlsInstances.delete(slot); }
   } else {
     btn.className = 'sched-btn sched-btn-active';
     setPlaceholderState(true);
@@ -1165,6 +1174,7 @@ function renderRelays(relays) {
   }
   if (!relays || relays.length === 0) {
     list.innerHTML = '<div class="es-wrap es-relay"><div class="es-badge"><span class="es-dot"></span>No active relays</div><div class="es-sub">Start a stream from the channel search<br>or trigger a schedule</div></div>';
+    stopSrsPolling();
     return;
   }
   list.innerHTML = '';
@@ -1266,6 +1276,7 @@ function fmtDt(iso) {
     const r = await GET('/api/relays');
     relayData = r || [];
     renderRelays(relayData);
+    startSrsPolling();
   } catch {}
   // Restore page from URL path, default to dashboard
   const savedPage = location.pathname.replace(/^\//, '') || 'dashboard';
@@ -1273,7 +1284,6 @@ function fmtDt(iso) {
   connectDashboardSSE();
   connectAutoSchedSSE();
   pollSrsStats();
-  setInterval(pollSrsStats, 5000);
   // Remove loader only after fonts and data are ready — prevents FOUC
   await document.fonts.ready;
   document.getElementById('app-loader').remove();
@@ -1359,7 +1369,7 @@ const connectDashboardSSE = makeSSE('/api/events', ({ type, relays }) => {
     }
   }
   if (type === 'schedule') loadSchedules();
-  if (type === 'relays')   { relayData = relays || []; renderRelays(relayData); }
+  if (type === 'relays')   { relayData = relays || []; renderRelays(relayData); relayData.length > 0 ? startSrsPolling() : stopSrsPolling(); }
 });
 
 let asRunCompleteCallback = null;
