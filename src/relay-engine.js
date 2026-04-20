@@ -3,6 +3,11 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 
+const RECONNECT_BASE_DELAY = 10000;
+const RECONNECT_MAX_DELAY = 30000;
+const RECONNECT_MAX_RETRIES = 10;
+const RECONNECT_STABLE_THRESHOLD = 60000;
+
 function createRelayEngine(context) {
   const {
     getSettings,
@@ -19,15 +24,14 @@ function createRelayEngine(context) {
   } = context;
 
   const launching = new Set();
+  const retryState = new Map();
 
   function findFreeSlot(preferred) {
     const settings = getSettings();
     const max = Math.max(1, Math.min(5, settings.maxSlots || 2));
-    // Try preferred slot first if valid and free
     if (preferred && ALL_SLOTS.includes(preferred) && ALL_SLOTS.indexOf(preferred) < max && !relays.has(preferred)) {
       return preferred;
     }
-    // Fall back to first available slot
     for (let i = 0; i < max; i++) {
       if (!relays.has(ALL_SLOTS[i])) return ALL_SLOTS[i];
     }
@@ -42,12 +46,12 @@ function createRelayEngine(context) {
       '-re',
       '-fflags', '+genpts+discardcorrupt',
       '-err_detect', 'ignore_err',
-      '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-      '-rw_timeout', '5000000',
+      '-rw_timeout', '30000000',
+      '-probesize', '1000000',
+      '-analyzeduration', '1000000',
       '-i', s.url,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-crf', '23',
-      '-g', '60',
-      '-c:a', 'aac', '-ac', '2', '-b:a', '128k',
+      '-map', '0:v', '-map', '0:a:0',
+      '-c:v', 'copy', '-c:a', 'aac', '-ac', '2', '-b:a', '128k',
       '-f', 'flv', '-flvflags', 'no_duration_filesize',
       outputUrl
     ];
@@ -68,7 +72,7 @@ function createRelayEngine(context) {
 
     let proc;
     try {
-      proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', stderrTarget], detached: true });
+      proc = spawn(FFMPEG_PATH, args, { stdio: ['pipe', 'ignore', stderrTarget], detached: true });
       proc.unref();
     } catch (e) {
       if (typeof stderrTarget === 'number') try { fs.closeSync(stderrTarget); } catch {}
@@ -76,7 +80,9 @@ function createRelayEngine(context) {
       return null;
     }
 
-    if (typeof stderrTarget === 'number') fs.closeSync(stderrTarget); // parent closes its fd; child keeps its own
+    if (typeof stderrTarget === 'number') fs.closeSync(stderrTarget);
+
+    proc.stdin?.on('error', () => {});
 
     proc.on('error', e => console.error(`[Relay:${slot}] FFmpeg error:`, e.message));
 
@@ -84,6 +90,7 @@ function createRelayEngine(context) {
       serverLog(`[Relay:${slot}] FFmpeg exited, code: ${code}`);
       const unexpected = relays.has(slot);
       const saved = unexpected ? { ...relays.get(slot), proc: undefined } : null;
+
       if (code === null) {
         logAutoActivity('warn',  `Relay ${slot} was stopped`);
       } else if (code === 0) {
@@ -96,17 +103,36 @@ function createRelayEngine(context) {
         saveRelays();
       }
       if (unexpected && saved && code !== null) {
-        logAutoActivity('info', `Auto-restarting relay ${slot} in 3s…`);
+        const rs = retryState.get(slot) || { count: 0, lastStartedAt: null };
+        if (rs.lastStartedAt) {
+          const uptime = Date.now() - new Date(rs.lastStartedAt).getTime();
+          if (uptime >= RECONNECT_STABLE_THRESHOLD) {
+            rs.count = 0;
+          }
+        }
+        rs.count++;
+        if (rs.count > RECONNECT_MAX_RETRIES) {
+          logAutoActivity('error', `Relay ${slot} exceeded max retries (${RECONNECT_MAX_RETRIES}), giving up`);
+          retryState.delete(slot);
+          return;
+        }
+        const delay = Math.min(RECONNECT_BASE_DELAY * Math.pow(2, rs.count - 1), RECONNECT_MAX_DELAY);
+        rs.lastStartedAt = null;
+        retryState.set(slot, rs);
+        logAutoActivity('info', `Auto-restarting relay ${slot} in ${Math.round(delay / 1000)}s (attempt ${rs.count}/${RECONNECT_MAX_RETRIES})…`);
         setTimeout(() => {
           const newProc = spawnRelay(slot, saved);
           if (newProc) {
-            relays.set(slot, { slot, name: saved.name, url: saved.url, logo: saved.logo, startedAt: new Date().toISOString(), pid: newProc.pid, proc: newProc });
+            const startedAt = new Date().toISOString();
+            relays.set(slot, { slot, name: saved.name, url: saved.url, logo: saved.logo, startedAt, pid: newProc.pid, proc: newProc });
+            const upd = retryState.get(slot);
+            if (upd) upd.lastStartedAt = startedAt;
             saveRelays();
-            logAutoActivity('info', `Relay ${slot} auto-restarted`);
+            logAutoActivity('info', `Relay ${slot} auto-restarted (attempt ${rs.count})`);
           } else {
             logAutoActivity('error', `Relay ${slot} failed to auto-restart`);
           }
-        }, 3000);
+        }, delay);
       }
     });
 
@@ -116,12 +142,21 @@ function createRelayEngine(context) {
   function killRelay(slot) {
     const relay = relays.get(slot);
     if (!relay) return false;
-    if (relay.proc) {
-      relay.proc.kill('SIGKILL');
-    } else if (relay.pid) {
-      try { process.kill(relay.pid, 'SIGKILL'); } catch {}
+    const pid = relay.pid;
+    const proc = relay.proc;
+    if (proc && proc.stdin && proc.stdin.writable) {
+      try { proc.stdin.write('q'); } catch {}
+    } else if (pid) {
+      try { process.kill(pid, 'SIGKILL'); } catch {}
     }
+    const forceTimer = setTimeout(() => {
+      try { process.kill(pid, 0); } catch { return; }
+      if (proc) { try { proc.kill('SIGKILL'); } catch {} }
+      else { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    }, 5000);
+    forceTimer.unref();
     relays.delete(slot);
+    retryState.delete(slot);
     saveRelays();
     return true;
   }
@@ -130,16 +165,15 @@ function createRelayEngine(context) {
     const settings = getSettings();
     let slot = findFreeSlot(s.preferredSlot);
     if (!slot) {
-      // All slots occupied — force-replace the preferred slot, or fall back to slot 1
       const max = Math.max(1, Math.min(5, settings.maxSlots || 2));
       const preferred = s.preferredSlot && ALL_SLOTS.includes(s.preferredSlot) && ALL_SLOTS.indexOf(s.preferredSlot) < max
         ? s.preferredSlot
         : ALL_SLOTS[0];
       killRelay(preferred);
-      await new Promise(r => setTimeout(r, 1000));
       slot = preferred;
     }
 
+    await new Promise(r => setTimeout(r, 2000));
     if (launching.has(slot)) return { ok: false, error: `Slot ${slot} is already being launched` };
     launching.add(slot);
 
@@ -148,6 +182,7 @@ function createRelayEngine(context) {
 
     const startedAt = new Date().toISOString();
     relays.set(slot, { slot, name: s.name, url: s.url, logo: s.logo || null, startedAt, pid: proc.pid, proc });
+    retryState.set(slot, { count: 0, lastStartedAt: startedAt });
     launching.delete(slot);
     saveRelays();
 

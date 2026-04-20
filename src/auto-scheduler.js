@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 async function runAutoScheduler(context) {
   const {
     autoScheduler,
-    m3uMemCache,
+    getM3uMemCache,
     schedules,
     saveSchedules,
     registerSchedule,
@@ -19,7 +19,7 @@ async function runAutoScheduler(context) {
     logAutoActivity('error', 'Search string or API endpoint not configured');
     return;
   }
-  if (!m3uMemCache || !m3uMemCache.sourceUrl) {
+  if (!getM3uMemCache() || !getM3uMemCache().sourceUrl) {
     logAutoActivity('error', 'M3U cache not loaded — please load M3U manually first');
     return;
   }
@@ -95,7 +95,7 @@ async function runAutoScheduler(context) {
       continue;
     }
 
-    const channels = m3uMemCache.channels || [];
+    const channels = getM3uMemCache().channels || [];
     const search   = searchString.toLowerCase();
     const dateLow  = friendlyDate.toLowerCase();
 

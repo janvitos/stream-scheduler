@@ -323,8 +323,7 @@ app.post('/api/play-now', async (req, res) => {
   const resolvedLogo = resolveLogoForUrl(url, logo);
   if (force && preferredSlot && relays.has(preferredSlot)) {
     killRelay(preferredSlot);
-    // Give SRS time to release the RTMP slot before the new publisher connects
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 2000));
   }
   const s = { id: null, name: name || 'Now', url, noHistory, logo: resolvedLogo, preferredSlot: preferredSlot || null };
   const result = await launchStream(s);
@@ -357,8 +356,8 @@ app.get('/api/srs-streams', async (req, res) => {
       const slot = s.url?.split('/').pop();
       if (slot) streams[slot] = {
         kbps:    s.kbps?.recv_30s || 0,
-        width:   s.video?.width   || 0,
-        height:  s.video?.height  || 0,
+        width:   (s.video?.width > 0 ? s.video.width : 0),
+        height:  (s.video?.height > 0 ? s.video.height : 0),
         clients: s.clients        || 0,
       };
     }
@@ -589,7 +588,7 @@ function startAutoSchedCron() {
   if (!autoScheduler.enabled || !autoScheduler.checkTime) return;
   const [h, m] = autoScheduler.checkTime.split(':');
   autoSchedCronJob = cron.schedule(`${parseInt(m)} ${parseInt(h)} * * *`, () => {
-    runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U, timezone: settings.timezone });
+    runAutoScheduler({ autoScheduler, getM3uMemCache: () => m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U, timezone: settings.timezone });
   }, { timezone: settings.timezone });
   serverLog(`[AutoSched] Cron set for ${autoScheduler.checkTime} daily (${settings.timezone})`);
 }
@@ -657,7 +656,7 @@ app.post('/api/auto-scheduler/disable', (req, res) => {
 app.post('/api/auto-scheduler/run', (req, res) => {
   res.json({ ok: true, async: true });
   let runFailed = false;
-  runAutoScheduler({ autoScheduler, m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U, timezone: settings.timezone })
+  runAutoScheduler({ autoScheduler, getM3uMemCache: () => m3uMemCache, schedules, saveSchedules, registerSchedule, logAutoActivity, refreshM3U, timezone: settings.timezone })
     .catch(e => { runFailed = true; logAutoActivity('error', 'Auto-scheduler run failed: ' + e.message); })
     .finally(() => broadcastSSE(autoSchedSSEClients, { type: 'run-complete', ok: !runFailed }));
 });
