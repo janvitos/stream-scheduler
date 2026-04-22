@@ -40,29 +40,22 @@ function createRelayEngine(context) {
 
   function spawnRelay(slot, s) {
     const settings = getSettings();
-    const srtUrl = settings.srtUrl || '127.0.0.1';
-    const srtPort = settings.srtPort || 8890;
-    const srtLatency = settings.srtLatency || 120;
-    const srtPassword = settings.srtPassword ? `&passphrase=${encodeURIComponent(settings.srtPassword)}` : '';
-    const streamId = `publish:${slot}`;
-    const outputUrl = `srt://${srtUrl}:${srtPort}?mode=caller&latency=${srtLatency}&streamid=${encodeURIComponent(streamId)}${srtPassword}`;
+    const outputUrl = `${settings.srsUrl.replace(/\/$/, '')}/${slot}`;
     const args = [
+      ...(settings.debugLogging ? ['-loglevel', 'warning'] : []),
+      '-re',
       '-reconnect_at_eof', '1',
       '-reconnect_streamed', '1',
       '-reconnect_delay_max', '7',
       '-fflags', '+genpts+discardcorrupt',
       '-err_detect', 'ignore_err',
       '-rw_timeout', '30000000',
-      '-probesize', '5000000',
-      '-analyzeduration', '5000000',
+      '-probesize', '1000000',
+      '-analyzeduration', '1000000',
       '-i', s.url,
       '-map', '0:v', '-map', '0:a:0',
-      '-c:v', 'copy',
-      '-bsf:v', 'h264_mp4toannexb',
-      '-c:a', 'aac', '-ac', '2', '-b:a', '128k',
-      '-copyts',
-      '-muxdelay', '0',
-      '-f', 'mpegts',
+      '-c:v', 'copy', '-c:a', 'aac', '-ac', '2', '-b:a', '128k',
+      '-f', 'flv', '-flvflags', 'no_duration_filesize',
       outputUrl
     ];
 

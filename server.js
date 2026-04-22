@@ -58,9 +58,7 @@ const MAX_HISTORY = 10;
 let history  = readJSON(HISTORY_PATH, []).slice(-MAX_HISTORY);
 const SETTINGS_DEFAULTS = {
   timezone:           'America/New_York',
-  srtUrl:             '192.168.1.125',
-  srtPort:            8890,
-  srtLatency:         120,
+  srsUrl:             'rtmp://192.168.1.125/live',
   srsWatchUrl:        'https://stream.ipnoze.com/live',
   maxSlots:           2,
   m3uAutoRefresh:     false,
@@ -349,7 +347,7 @@ app.post('/api/relays/:slot/stop', (req, res) => {
 
 app.get('/api/srs-streams', async (req, res) => {
   try {
-    const host = settings.srtUrl || '127.0.0.1';
+    const host = new URL(settings.srsUrl.replace(/^rtmp:/, 'http:')).hostname;
     const r = await fetch(`http://${host}:1985/api/v1/streams/`, { signal: AbortSignal.timeout(3000) });
     if (!r.ok) return res.json({ streams: {} });
     const data = await r.json();

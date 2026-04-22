@@ -1059,7 +1059,7 @@ function makeRelayCard(relay) {
   const wrap = document.createElement('div');
   wrap.dataset.slot = relay.slot;
   const { channel, title } = parseName(relay.name);
-  const watchUrl = `${(document.getElementById('srs-watch-url')?.value || '').replace(/\/$/, '')}/${relay.slot}/index.m3u8`;
+  const watchUrl = `${(document.getElementById('srs-watch-url')?.value || '').replace(/\/$/, '')}/${relay.slot}.m3u8`;
   wrap.innerHTML = `
     <div class="media-row">
       ${logoImg(relay.logo)}
