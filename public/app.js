@@ -882,7 +882,8 @@ function openAddModal(ch) {
   // Use eventTime extracted by the server from tvg-name before stripping it from display name
   if (ch.eventTime) {
     const dt = new Date(ch.eventTime);
-    dt.setMinutes(dt.getMinutes() + 10);
+    const offset = (asData && asData.startOffset != null) ? asData.startOffset : 10;
+    dt.setMinutes(dt.getMinutes() + offset);
     setTypeButtonGroupValue('am-type-group', 'once');
     document.getElementById('am-runat').value = localDateTimeValue(dt);
     toggleTypeFields('am', 'once');
