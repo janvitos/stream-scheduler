@@ -3,6 +3,7 @@
 ═══════════════════════════════════════════ */
 let schedules = [];
 let history   = [];
+let asData    = {};
 
 /* ═══════════════════════════════════════════
    Timezone list (IANA → city, ordered UTC-12→+14)
@@ -1292,8 +1293,6 @@ function fmtDt(iso) {
 
 
 // ── Auto-Scheduler ────────────────────────────────────────────────────────────
-let asData = {};
-
 function renderAsLog() {
   const log = document.getElementById('as-log');
   const mergedEntries = asData.mergedActivityLog || [];
